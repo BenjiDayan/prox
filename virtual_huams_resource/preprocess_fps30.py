@@ -16,8 +16,10 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_root', type=str, default='../GTA-1M/FPS-30')
-parser.add_argument('--sequence_id', type=str, default='2020-05-21-14-06-15_resize')
+parser.add_argument('--sequence_id', type=str, default='2020-05-20-21-13-13_resize')
 parser.add_argument('--save_root', type=str, default='../GTA-1M/FPS-30/preprocessed_data')
+
+# output 2D proximity maps and many other things in /GTA-1M/FPS-30/preprocessed_data
 
 args = parser.parse_args()
 
@@ -51,6 +53,7 @@ if __name__ == '__main__':
     if not os.path.exists(save_rgb_path):
         os.makedirs(save_rgb_path)
 
+    # base images
     rgb_list = glob.glob(os.path.join(args.data_root, args.sequence_id, '*.jpg'))
     rgb_list.sort()
     n_frame = int(rgb_list[-1][-9:-4]) + 1  # total frame number
@@ -69,6 +72,10 @@ if __name__ == '__main__':
         start = max(0, frame_N-fps*6) if fps==5 else max(5, frame_N-fps*6)
         end = frame_N + fps * 4
         step = 3 * fps // 5
+
+        # we go for a range of a number of frames centered around frame_N - fps*6 to frame_N + fps*4 :O
+        # I don't understand this. E.g. frame_N = 500, fps=30 gives frame_cnt: 320, 338, 356, ..., 608
+        # Oh I think it's about getting a local point cloud for the current short time period - 
         for frame_cnt in range(start, end, step):   # 10s
             img_path = os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(frame_cnt) + '.jpg')
             depth_path = os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(frame_cnt) + '.png')
@@ -111,6 +118,7 @@ if __name__ == '__main__':
 
             depth = np.expand_dims(depth, axis=-1)   # [h,w,1]
 
+            # from rgb image and human excluded depth map
             rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
                 o3d.geometry.Image(img),
                 o3d.geometry.Image(depth.astype(np.float32)),
@@ -118,6 +126,7 @@ if __name__ == '__main__':
                 depth_trunc=MAX_DEPTH,
                 convert_rgb_to_intensity=False,
             )
+            # create coloured point cloud from rgbd image?
             pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                 rgbd_image,
                 o3d.camera.PinholeCameraIntrinsic(w, h, focal_length_x/scale, focal_length_y/scale, (w/2), (h/2)),
@@ -129,10 +138,14 @@ if __name__ == '__main__':
             depth_pts = depth_pts_aug.dot(cam_extr_ref)[:, :3]
             pcd.points = o3d.utility.Vector3dVector(depth_pts)
 
+            # we put the point cloud in to the global point cloud?
             global_pcd.points.extend(pcd.points)
             global_pcd.colors.extend(pcd.colors)
 
 
+        # the global point cloud has all information (including occluded points behind human for the current frame)
+        # therefore we extract a new current frame depth image from global point cloud to use instead of input data
+        # depth image.
         ##################### capture depth/RGB image of cur_frame_N from point cloud ###############
         for cur_frame_N in range(frame_N-5, frame_N+1):
             vis.add_geometry(global_pcd)
@@ -146,6 +159,8 @@ if __name__ == '__main__':
             vis.poll_events()
             vis.update_renderer()
 
+
+            # better than input depth and rgb images for current frame
             out_depth = np.asarray(vis.capture_depth_float_buffer())
             # plt.imshow(out_depth)
             # plt.show()

@@ -2,35 +2,43 @@ import cv2
 import glob
 import os
 import pickle
-from gta_utils import LIMBS, read_depthmap
+# from gta_utils import LIMBS, read_depthmap
 from tqdm import tqdm
 import numpy as np
 from shutil import copyfile
 import argparse
 
+from pathlib import Path
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_root', type=str, default='../GTA-1M/FPS-30/2020-05-21-13-54-43')
+parser.add_argument('--data_root', type=str, default=Path('../GTA-1M/FPS-30/2020-05-20-21-13-13'))
 
 args = parser.parse_args()
+if type(args.data_root) is str:
+    args.data_root = Path(args.data_root)
 
+# every single .jpg file in data_root
+files = glob.glob(os.path.join(args.data_root, '*.jpg'))
+print(os.path.join(args.data_root, '*.jpg'))
+print(f'files: {files}')
+n_frame = len(files)  # total frame number
 
+save_path = args.data_root / '_resize'
 
-n_frame = len(glob.glob(os.path.join(args.data_root, '*.jpg')))  # total frame number
-
-save_path = args.data_root + '_resize'
-
-info = pickle.load(open(os.path.join(args.data_root, 'info_frames.pickle'), 'rb'))
+# info = pickle.load(open(os.path.join(args.data_root, 'info_frames.pickle'), 'rb'))
 
 h, w = 256, 448
 
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
-copyfile(os.path.join(args.data_root, 'info_frames.pickle'), os.path.join(save_path, 'info_frames.pickle'))
-copyfile(os.path.join(args.data_root, 'realtimeinfo.gz'), os.path.join(save_path, 'realtimeinfo.gz'))
-copyfile(os.path.join(args.data_root, 'info_frames.npz'), os.path.join(save_path, 'info_frames.npz'))
+# copyfile(os.path.join(args.data_root, 'info_frames.pickle'), os.path.join(save_path, 'info_frames.pickle'))
+# copyfile(os.path.join(args.data_root, 'realtimeinfo.gz'), os.path.join(save_path, 'realtimeinfo.gz'))
+# copyfile(os.path.join(args.data_root, 'info_frames.npz'), os.path.join(save_path, 'info_frames.npz'))
 
 
+# img files are number.jpg, depth files are number.png and human_id_src (?) files are number_id.png
+# directly transfer to save_path folder, resized. This is within data_root/_resize/...
 for i in tqdm(range(n_frame)):
     img_path = os.path.join(args.data_root, '{:05d}'.format(i) + '.jpg')
     img = cv2.imread(img_path)  # [h,w,3]
