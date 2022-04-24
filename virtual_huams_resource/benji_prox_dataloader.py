@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data._utils.collate import default_collate
 from torchvision import transforms, utils
 import glob
 from pathlib import Path
@@ -13,8 +14,9 @@ import datetime as dt
 import pickle
 
 class proxDataset(Dataset):
-    def __init__(self, root_dir, in_frames=10, pred_frames=5):
+    def __init__(self, root_dir, in_frames=10, pred_frames=5, verbose=False):
         self.root_dir = Path(root_dir)
+        self.verbose = verbose
 
         scenes = glob.glob(str(self.root_dir / '*'))
         scenes = [Path(scene) for scene in scenes]
@@ -83,12 +85,38 @@ class proxDataset(Dataset):
         pred_frames_fns = [frame_dict['fn'] for frame_dict in pred_frames_dicts]
 
         def load(fn):
-            with open(fn, 'rb') as file:
-                return pickle.load(file) 
+            try:
+                with open(fn, 'rb') as file:
+                    return pickle.load(file) 
+            except FileNotFoundError:
+                return None
+
+        def nans_of_shape(shape):
+            out = np.empty(shape)
+            out[:] = np.nan
+            return out
         
         in_data, pred_data = map(lambda fns: [load(fn) for fn in fns],  [in_frames_fns, pred_frames_fns])
-        in_skels, pred_skels = map(lambda datas: np.array([data['body_pose'] for data in datas]).reshape(-1, 21, 3), [in_data, pred_data])
-        return (idx, in_skels, pred_skels)
+        # In event of failed file read, have arrays of appropriate shape but filled with nans - these training pairs
+        # will be filtered out by our defined collate_fn in batching.
+        if None in in_data or None in pred_data:
+            in_skels, pred_skels = nans_of_shape((self.in_frames, 21, 3)), nans_of_shape((self.pred_frames, 21, 3))
+        else:
+            in_skels, pred_skels = map(
+            lambda datas: np.array([data['body_pose'] for data in datas]).reshape(-1, 21, 3),
+            [in_data, pred_data])
+        return (idx, in_skels, pred_skels) if not self.verbose else (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
 
 
 
+#  doesn't exist. there's 02919, 02920, 02970 then 02950 weirdly
+# try pd2.__getitem__(2098)  this is the offending sample
+# FileNotFoundError: [Errno 2] No such file or directory: 'D:\\prox_data\\PROXD_attempt2\\PROXD\\MPH1Library_00145_01\\results\\s001_frame_02920__00.01.37.300\\000.pkl'
+
+def my_collate(batch):
+    # I think these are still np.arrays, will become tensors later
+    batch = list(filter(
+        lambda triple: (not np.any(np.isnan(triple[1]))) and (not np.any(np.isnan(triple[2]))),
+        batch
+    ))
+    return default_collate(batch)
