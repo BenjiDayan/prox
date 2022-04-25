@@ -12,11 +12,37 @@ from pathlib import Path
 import re
 import datetime as dt
 import pickle
+import smplx
 
 class proxDataset(Dataset):
-    def __init__(self, root_dir, in_frames=10, pred_frames=5, verbose=False):
+    def __init__(self, root_dir, in_frames=10, pred_frames=5, output_type='joint_locations', smplx_model_path=None):
+        if not output_type in ['joint_locations', 'joint_thetas', 'raw_pkls']:
+            raise Exception("output_type should be one of ['joint_locations', 'joint_thetas', 'raw_pkls']")
+
+        # we need a body model to convert beta, theta and global translation into 3D joint locations.
+        if output_type == 'joint_locations':
+            device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+            body_model = smplx.create(smplx_model_path, 
+                          model_type='smplx',        ## smpl, smpl+h, or smplx?
+                          gender='neutral', ext='npz',  ## file format 
+                          num_pca_comps=12,          ## MANO hand pose pca component
+                          create_global_orient=True, 
+                          create_body_pose=True,
+                          create_betas=True,
+                          create_left_hand_pose=True,
+                          create_right_hand_pose=True,
+                          create_expression=True, 
+                          create_jaw_pose=True,
+                          create_leye_pose=True,
+                          create_reye_pose=True,
+                          create_transl=True,
+                          batch_size=1               ## how many bodies in a batch?
+                          )
+            body_model.eval()
+            self.body_model = body_model
+
+        self.output_type = output_type
         self.root_dir = Path(root_dir)
-        self.verbose = verbose
 
         scenes = glob.glob(str(self.root_dir / '*'))
         scenes = [Path(scene) for scene in scenes]
@@ -100,11 +126,26 @@ class proxDataset(Dataset):
         # In event of failed file read, have arrays of appropriate shape but filled with nans - these training pairs
         # will be filtered out by our defined collate_fn in batching.
         if None in in_data or None in pred_data:
-            in_skels, pred_skels = nans_of_shape((self.in_frames, 21, 3)), nans_of_shape((self.pred_frames, 21, 3))
-        else:
+            # in_skels, pred_skels = nans_of_shape((self.in_frames, 21, 3)), nans_of_shape((self.pred_frames, 21, 3))
+            in_skels, pred_skels = None, None
+        elif self.output_type == 'joint_thetas':  # .reshape(-1, 21, 3)
             in_skels, pred_skels = map(
-            lambda datas: np.array([data['body_pose'] for data in datas]).reshape(-1, 21, 3),
-            [in_data, pred_data])
+                lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21, 3),
+                [in_data, pred_data])
+        elif self.output_type == 'joint_locations':
+            in_skels, pred_skels = map(
+                lambda datas: torch.stack([self.body_model(return_joints=True, betas=torch.Tensor(data['betas']), body_pose=torch.Tensor(data['body_pose'])).joints[0] for data in datas], dim=0),
+                [in_data, pred_data]
+            )
+            
+
+        if self.output_type == 'raw_pkls':
+            return (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
+        if self.output_type == 'joint_thetas':
+            return (idx, in_skels, pred_skels)
+        elif self.output_type == 'joint_locations':
+            return (idx, in_skels, pred_skels)
+
         return (idx, in_skels, pred_skels) if not self.verbose else (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
 
 
@@ -116,7 +157,8 @@ class proxDataset(Dataset):
 def my_collate(batch):
     # I think these are still np.arrays, will become tensors later
     batch = list(filter(
-        lambda triple: (not np.any(np.isnan(triple[1]))) and (not np.any(np.isnan(triple[2]))),
+        # check that they exist and don't have nans??
+        lambda triple: (triple[1] is not None) and (triple[2] is not None) and (not torch.any(torch.isnan(triple[1]))) and (not torch.any(torch.isnan(triple[2]))),
         batch
     ))
     return default_collate(batch)
