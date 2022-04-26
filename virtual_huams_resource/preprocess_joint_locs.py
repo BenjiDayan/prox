@@ -93,7 +93,7 @@ for i in tqdm.tqdm(range(len(pd)), total=len(pd)):
     save_dict = {'in_fns': in_data[0], 'pred_fns': pred_data[0], 'in_joint_locations': in_joint_locations, 'pred_joint_locations': pred_joint_locations}
 
     new_fn.parent.mkdir(parents=True, exist_ok=True)
-    print(f'new_fn: {new_fn}')
+    # print(f'new_fn: {new_fn}')
     with open(str(new_fn), 'wb') as file:
         pickle.dump(save_dict, file)
 

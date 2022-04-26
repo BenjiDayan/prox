@@ -14,8 +14,22 @@ import datetime as dt
 import pickle
 import smplx
 
+
+def load(fn):
+    try:
+        with open(fn, 'rb') as file:
+            return pickle.load(file) 
+    except FileNotFoundError:
+        return None
+
+def nans_of_shape(shape):
+    out = np.empty(shape)
+    out[:] = np.nan
+    return out
+
 class proxDataset(Dataset):
     def __init__(self, root_dir, in_frames=10, pred_frames=5, output_type='joint_locations', smplx_model_path=None):
+        # NB output_type='joint_locations' is deprecated in favor of preprocess_joint_locs.py (which could be ported in here tbh)
         if not output_type in ['joint_locations', 'joint_thetas', 'raw_pkls']:
             raise Exception("output_type should be one of ['joint_locations', 'joint_thetas', 'raw_pkls']")
 
@@ -87,14 +101,6 @@ class proxDataset(Dataset):
         assert(np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
         self.bounds = np.cumsum(self.bounds)
 
-        
-
-        # step = 7
-        # pred = 3
-        # ys = np.arange(0, n, step=step+pred)
-        # in_frames = [list(range(i, i+step)) for i in ys[:-1]]
-        # pred_frames = [list(range(i+step, i+step+pred)) for i in ys[:-1]]
-
 
     def __len__(self):
         return self.bounds[-1]
@@ -110,17 +116,6 @@ class proxDataset(Dataset):
         in_frames_fns = [frame_dict['fn'] for frame_dict in in_frames_dicts]
         pred_frames_fns = [frame_dict['fn'] for frame_dict in pred_frames_dicts]
 
-        def load(fn):
-            try:
-                with open(fn, 'rb') as file:
-                    return pickle.load(file) 
-            except FileNotFoundError:
-                return None
-
-        def nans_of_shape(shape):
-            out = np.empty(shape)
-            out[:] = np.nan
-            return out
         
         in_data, pred_data = map(lambda fns: [load(fn) for fn in fns],  [in_frames_fns, pred_frames_fns])
         # In event of failed file read, have arrays of appropriate shape but filled with nans - these training pairs
@@ -147,6 +142,30 @@ class proxDataset(Dataset):
             return (idx, in_skels, pred_skels)
 
         return (idx, in_skels, pred_skels) if not self.verbose else (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
+
+
+
+class proxDatasetJoints(proxDataset):
+    def __init__(self, root_dir):
+        super().__init__(root_dir, output_type='raw_pkls')  # for pkl loading.
+        self.seq_lens = np.array([len(fns_dict) for stem, fns_dict in self.sequences])
+        self.seq_lens = np.cumsum(self.seq_lens)
+        
+    def __len__(self):
+        return self.seq_lens[-1]  # now each individual file is a full in and pred training point
+
+    def __getitem__(self, idx):
+        seq_idx = np.digitize(idx, self.seq_lens)
+        assert seq_idx < len(self.seq_lens), "idx too big"
+        idx_in_seq = idx - (self.seq_lens[seq_idx-1] if seq_idx > 0 else 0)
+        start = idx_in_seq
+
+        frame_seq_dict = self.sequences[seq_idx][1][start]
+        fn = frame_seq_dict['fn']
+        frame_seq_data = load(fn)
+        in_joint_locations, pred_joint_locations = frame_seq_data['in_joint_locations'], frame_seq_data['pred_joint_locations']
+
+        return (idx, in_joint_locations, pred_joint_locations)
 
 
 
