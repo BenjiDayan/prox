@@ -8,7 +8,7 @@ import open3d as o3d
 import matplotlib.pyplot as plt
 from gta_utils import LIMBS, read_depthmap
 from sklearn.neighbors import NearestNeighbors
-from tqdm import tqdm
+from tqdm import tqdm       # some fancy visual effect
 import glob
 from utils import *
 import copy
@@ -25,13 +25,16 @@ args = parser.parse_args()
 
 
 if __name__ == '__main__':
+    ##################### set up parameters #########################
     MAX_DEPTH = 20.0
     h, w = 256, 448
     # h, w = 1080, 1920
     scale = 1080/h
     fps = 30
     depth_inpaint_itr = 500
+    ##################### set up parameters #########################
 
+    ##################### join paths #########################
     save_feature_img_path = os.path.join(args.save_root, args.sequence_id, 'bps_feature_img')
     save_feature_npy_path = os.path.join(args.save_root, args.sequence_id, 'bps_feature_npy')
     save_depth_img_path = os.path.join(args.save_root, args.sequence_id, 'depth_inpaint_img')
@@ -40,8 +43,9 @@ if __name__ == '__main__':
 
     info = pickle.load(open(os.path.join(args.data_root, args.sequence_id, 'info_frames.pickle'), 'rb'))
     info_npz = np.load(os.path.join(args.data_root, args.sequence_id, 'info_frames.npz'))
+    ##################### join paths #########################
 
-
+    ##################### create directories #########################
     if not os.path.exists(save_feature_img_path):
         os.makedirs(save_feature_img_path)
     if not os.path.exists(save_feature_npy_path):
@@ -52,9 +56,10 @@ if __name__ == '__main__':
         os.makedirs(save_depth_npy_path)
     if not os.path.exists(save_rgb_path):
         os.makedirs(save_rgb_path)
+    ##################### create directories #########################
 
     # base images
-    rgb_list = glob.glob(os.path.join(args.data_root, args.sequence_id, '*.jpg'))
+    rgb_list = glob.glob(os.path.join(args.data_root, args.sequence_id, '*.jpg'))       # collect paths of all .jpg images under the directory
     rgb_list.sort()
     n_frame = int(rgb_list[-1][-9:-4]) + 1  # total frame number
 
@@ -62,20 +67,22 @@ if __name__ == '__main__':
     vis = o3d.visualization.Visualizer()
     vis.create_window(width=w, height=h, visible=True)
 
+    ##################### depth map #########################
     seq_cnt = 0
-    start_frame = fps - 1
-    end_frame = n_frame - fps*4
+    start_frame = fps - 1       # skip the first fsp-1 frames
+    end_frame = n_frame - fps*4     # skip the last fps*4 frames
     # todo: step = fps*1 if enlarge training size
     for frame_N in tqdm(range(start_frame, end_frame, fps*3)):    # N_th frame: to get inpainted depth map --> reference frame
         global_pcd = o3d.geometry.PointCloud()
 
-        start = max(0, frame_N-fps*6) if fps==5 else max(5, frame_N-fps*6)
-        end = frame_N + fps * 4
-        step = 3 * fps // 5
+        start = max(0, frame_N-fps*6) if fps==5 else max(5, frame_N-fps*6)      # include the past fps*6 frames
+        end = frame_N + fps*4     # include the future fps*4 frames
+        step = 3 * fps // 5     # step (don't know why this step is used)
 
-        # we go for a range of a number of frames centered around frame_N - fps*6 to frame_N + fps*4 :O
+        # @Benjamin: We go for a range of a number of frames centered around frame_N - fps*6 to frame_N + fps*4 :O
         # I don't understand this. E.g. frame_N = 500, fps=30 gives frame_cnt: 320, 338, 356, ..., 608
-        # Oh I think it's about getting a local point cloud for the current short time period - 
+        # Oh I think it's about getting a local point cloud for the current short time period.
+        # @Di: Agree.
         for frame_cnt in range(start, end, step):   # 10s
             img_path = os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(frame_cnt) + '.jpg')
             depth_path = os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(frame_cnt) + '.png')
@@ -83,11 +90,11 @@ if __name__ == '__main__':
 
             ##################### read data #########################
             img = cv2.imread(img_path)  # [h,w,3]
-            img = img[:, :, ::-1]  # BGR --> RGB
+            img = img[:, :, ::-1]  # BGR --> RGB (don't know how this works)
             img = cv2.resize(img, (w, h), interpolation=cv2.INTER_NEAREST)
 
             infot = info[frame_cnt]
-            cam_near_clip = infot['cam_near_clip']  # near/fac: distances from the camera to start/stop rendering.
+            cam_near_clip = infot['cam_near_clip']  # near/far: distances from the camera to start/stop rendering.
             if 'cam_far_clip' in infot.keys():
                 cam_far_clip = infot['cam_far_clip']
             else:
