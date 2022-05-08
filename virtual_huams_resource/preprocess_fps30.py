@@ -32,7 +32,6 @@ if __name__ == '__main__':
     scale = 1080/h
     fps = 30
     depth_inpaint_itr = 500
-    ##################### set up parameters #########################
 
     ##################### join paths #########################
     save_feature_img_path = os.path.join(args.save_root, args.sequence_id, 'bps_feature_img')
@@ -43,7 +42,6 @@ if __name__ == '__main__':
 
     info = pickle.load(open(os.path.join(args.data_root, args.sequence_id, 'info_frames.pickle'), 'rb'))
     info_npz = np.load(os.path.join(args.data_root, args.sequence_id, 'info_frames.npz'))
-    ##################### join paths #########################
 
     ##################### create directories #########################
     if not os.path.exists(save_feature_img_path):
@@ -56,7 +54,6 @@ if __name__ == '__main__':
         os.makedirs(save_depth_npy_path)
     if not os.path.exists(save_rgb_path):
         os.makedirs(save_rgb_path)
-    ##################### create directories #########################
 
     # base images
     rgb_list = glob.glob(os.path.join(args.data_root, args.sequence_id, '*.jpg'))       # collect paths of all .jpg images under the directory
@@ -67,7 +64,7 @@ if __name__ == '__main__':
     vis = o3d.visualization.Visualizer()
     vis.create_window(width=w, height=h, visible=True)
 
-    ##################### depth map #########################
+    ##################### construct point clouds for a sequence of frames #########################
     seq_cnt = 0
     start_frame = fps - 1       # skip the first fsp-1 frames
     end_frame = n_frame - fps*4     # skip the last fps*4 frames
@@ -77,7 +74,7 @@ if __name__ == '__main__':
 
         start = max(0, frame_N-fps*6) if fps==5 else max(5, frame_N-fps*6)      # include the past fps*6 frames
         end = frame_N + fps*4     # include the future fps*4 frames
-        step = 3 * fps // 5     # step (don't know why this step is used)
+        step = 3 * fps // 5     # step (@Di: don't know why this step is used)
 
         # @Benjamin: We go for a range of a number of frames centered around frame_N - fps*6 to frame_N + fps*4 :O
         # I don't understand this. E.g. frame_N = 500, fps=30 gives frame_cnt: 320, 338, 356, ..., 608
@@ -88,18 +85,19 @@ if __name__ == '__main__':
             depth_path = os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(frame_cnt) + '.png')
             human_mask_path = os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(frame_cnt) + '_id.png')
 
-            ##################### read data #########################
-            img = cv2.imread(img_path)  # [h,w,3]
-            img = img[:, :, ::-1]  # BGR --> RGB (don't know how this works)
+            ##################### read and clean data #########################
+            img = cv2.imread(img_path)      # read RGB image [h,w,3]
+            img = img[:, :, ::-1]  # BGR --> RGB (@Di: don't know how this works)
             img = cv2.resize(img, (w, h), interpolation=cv2.INTER_NEAREST)
 
+            # @Di: why do we need this parameter?
             infot = info[frame_cnt]
             cam_near_clip = infot['cam_near_clip']  # near/far: distances from the camera to start/stop rendering.
             if 'cam_far_clip' in infot.keys():
                 cam_far_clip = infot['cam_far_clip']
             else:
                 cam_far_clip = 800.
-            depth = read_depthmap(depth_path, cam_near_clip, cam_far_clip)  # [1080, 1920, 1], in meters
+            depth = read_depthmap(depth_path, cam_near_clip, cam_far_clip)  # read depth image [1080, 1920, 1], in meters
             depth = cv2.resize(depth, (w, h), interpolation=cv2.INTER_NEAREST)   # [h,w]
             # plt.imshow(depth, cmap='plasma')
             # plt.show()
@@ -107,23 +105,28 @@ if __name__ == '__main__':
             # obtain the human mask
             joints_2d = info_npz['joints_2d']
             p = joints_2d[frame_cnt, 0]   # (x,y) coordinate of head joint
-            id_map = cv2.imread(human_mask_path, cv2.IMREAD_ANYDEPTH)   # [1080, 1920]
-            human_id = id_map[np.clip(int(p[1]), 0, 1079), np.clip(int(p[0]), 0, 1919)]   # scalar, uint8, human id  # todo: if head is not in image?
-            mask_human = id_map == human_id  # [1080, 1920], true/false, 1:person, 0:background
+            id_map = cv2.imread(human_mask_path, cv2.IMREAD_ANYDEPTH)   # read object & human mask [1080, 1920]
+            human_id = id_map[np.clip(int(p[1]), 0, 1079), np.clip(int(p[0]), 0, 1919)]   # scalar, uint8, human id
+            # @Benjamin: If head is not in image?
+            # @Di: This is just to extract the RGB value of human being in the image. np.clip() ensures that this will work
+            # even if the human head is not in the image.
+            mask_human = id_map == human_id     # extract human mask from object & human mask [1080, 1920], true/false, 1:person, 0:background
             mask_human = cv2.resize(mask_human.astype(np.uint8) , (w, h))
             kernel = np.ones((3, 3), np.uint8)
-            mask_dilation = cv2.dilate(mask_human.astype(np.uint8), kernel, iterations=1)
+            mask_dilation = cv2.dilate(mask_human.astype(np.uint8), kernel, iterations=1)       # expand the mask a bit
 
+            # @Di: why?
             depth[depth > MAX_DEPTH] = 0    # exclude points with large depth value
             depth[mask_dilation==True] = 0    # exclude person in the depth map
 
 
             #################### reconstruct point cloud from consecutive frames #######################
-            cam_int = info_npz['intrinsics'][frame_cnt]  # [3,3]
+            cam_int = info_npz['intrinsics'][frame_cnt]  # camera intrinsic params [3,3]
+            # retrieve focal lengths
             focal_length_x = cam_int[0, 0]
             focal_length_y = cam_int[1, 1]
 
-            depth = np.expand_dims(depth, axis=-1)   # [h,w,1]
+            depth = np.expand_dims(depth, axis=-1)      # @Di: why is axis -1? [h,w,1]
 
             # from rgb image and human excluded depth map
             rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
@@ -133,19 +136,19 @@ if __name__ == '__main__':
                 depth_trunc=MAX_DEPTH,
                 convert_rgb_to_intensity=False,
             )
-            # create coloured point cloud from rgbd image?
+            # create coloured point cloud from rgbd image
             pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
                 rgbd_image,
                 o3d.camera.PinholeCameraIntrinsic(w, h, focal_length_x/scale, focal_length_y/scale, (w/2), (h/2)),
             )  # cam coordinate
-
+            
             depth_pts = np.asarray(pcd.points)     # [1920*1080-n_human_mask, 3], coordinate of each pixel in the depth map
-            depth_pts_aug = np.hstack([depth_pts, np.ones([depth_pts.shape[0], 1])])
-            cam_extr_ref = np.linalg.inv(info_npz['world2cam_trans'][frame_cnt])
-            depth_pts = depth_pts_aug.dot(cam_extr_ref)[:, :3]
+            depth_pts_aug = np.hstack([depth_pts, np.ones([depth_pts.shape[0], 1])])        # euclidean coordinates to homogeneous coordinates
+            cam_extr_ref = np.linalg.inv(info_npz['world2cam_trans'][frame_cnt])        # camera extrinsic params
+            depth_pts = depth_pts_aug.dot(cam_extr_ref)[:, :3]      # camera coordinates to world coordinates
             pcd.points = o3d.utility.Vector3dVector(depth_pts)
 
-            # we put the point cloud in to the global point cloud?
+            # we put the point cloud into the global point cloud
             global_pcd.points.extend(pcd.points)
             global_pcd.colors.extend(pcd.colors)
 
@@ -187,32 +190,35 @@ if __name__ == '__main__':
                 cam_far_clip = 800.
             depth = read_depthmap(os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(cur_frame_N) + '.png'), cam_near_clip, cam_far_clip)
             depth = cv2.resize(depth, (w, h), interpolation=cv2.INTER_NEAREST)  # [h,w]
-            mask_sky_cur_frame_N = depth > MAX_DEPTH
+            mask_sky_cur_frame_N = depth > MAX_DEPTH        # sky mask
 
             joints_2d = info_npz['joints_2d']
             p = joints_2d[cur_frame_N, 0]  # (x,y) coordinate of head joint
+            # human & object mask
             id_map = cv2.imread(os.path.join(args.data_root, args.sequence_id, '{:05d}'.format(cur_frame_N) + '_id.png'), cv2.IMREAD_ANYDEPTH)  # [1080, 1920]
             human_id = id_map[np.clip(int(p[1]), 0, 1079), np.clip(int(p[0]), 0, 1919)]
-            mask_human_cur_frame_N = id_map == human_id  # true/false
+            mask_human_cur_frame_N = id_map == human_id     # human mask (true/false)
             mask_human_cur_frame_N = cv2.resize(mask_human_cur_frame_N.astype(np.uint8), (w, h))
 
-
-
-            depth_mask_human = (out_depth == 0) ^ (out_depth == 0) * (mask_human_cur_frame_N==False)
-            depth_mask_sky = (out_depth == 0) * (mask_human_cur_frame_N==False)
-            depth_mask_human_ratio = np.sum(depth_mask_human)/(h*w)
+            # (out_depth == 0) * (mask_human_cur_frame_N == false): sky
+            # (out_depth == 0): human or sky
+            depth_mask_human = (out_depth == 0) ^ (out_depth == 0) * (mask_human_cur_frame_N == False) # human mask
+            depth_mask_sky = (out_depth == 0) * (mask_human_cur_frame_N == False) # sky
+            depth_mask_human_ratio = np.sum(depth_mask_human)/(h*w) # ratio of human to the image
             # print(depth_mask_ratio)
-            if depth_mask_human_ratio <= 0.01:
-                if depth_mask_human_ratio == 0:
-                    inpainted_depth_map = out_depth
+            if depth_mask_human_ratio <= 0.01:      # if ratio of human is small enough
+                if depth_mask_human_ratio == 0:     # if no human at all
+                    inpainted_depth_map = out_depth     # this is the inpainted depth map
                     inpainted_depth_mask_human_ratio = 0
-                else:
-                    print('interpolating depth for frame {}'.format(cur_frame_N))
+                else:       # if the ratio is relatively large
+                    print('interpolating depth for frame {}'.format(cur_frame_N))       # interpolate the depth map
+                    # @Di: where is this function l1_inpainting() from?
                     inpainted_depth_map = l1_inpainting(out_depth,
                                                         depth_mask_human,
                                                         maxIter=depth_inpaint_itr)
                     plt.imshow(inpainted_depth_map)
                     # plt.show()
+                    # (out_depth > 0): not human or sky
                     inpainted_depth_mask_human = inpainted_depth_map[depth_mask_human] <= np.min(out_depth[out_depth>0])
                     inpainted_depth_mask_human_ratio = np.sum(inpainted_depth_mask_human) / (h*w)
 
