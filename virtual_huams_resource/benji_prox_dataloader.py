@@ -14,6 +14,8 @@ import datetime as dt
 import pickle
 import smplx
 
+from utils import normalized_joint_locations
+
 
 def load(fn):
     try:
@@ -26,7 +28,8 @@ def nans_of_shape(shape):
     out = np.empty(shape)
     out[:] = np.nan
     return out
-
+    
+# TODO deprecate
 class proxDataset(Dataset):
     def __init__(self, root_dir, in_frames=10, pred_frames=5, output_type='joint_locations', smplx_model_path=None):
         # NB output_type='joint_locations' is deprecated in favor of preprocess_joint_locs.py (which could be ported in here tbh)
@@ -35,7 +38,6 @@ class proxDataset(Dataset):
 
         # we need a body model to convert beta, theta and global translation into 3D joint locations.
         if output_type == 'joint_locations':
-            device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
             body_model = smplx.create(smplx_model_path, 
                           model_type='smplx',        ## smpl, smpl+h, or smplx?
                           gender='neutral', ext='npz',  ## file format 
@@ -69,7 +71,12 @@ class proxDataset(Dataset):
             for path, name in paths:
                 scene, frame, tstamp = re.match(r's(\d*)_frame_(\d*)__(.*)', name).groups()
                 scene, frame = int(scene), int(frame)
-                tstamp = dt.datetime.strptime(tstamp, '%H.%M.%S.%f').time()
+                try:
+                    tstamp = dt.datetime.strptime(tstamp, '%H.%M.%S.%f').time()
+                except Exception as e:
+                    print(tstamp)
+                    print(e.message, e.args)
+                    raise e
                 if scene not in outputs[stem]:
                     outputs[stem][scene] = []
                 outputs[stem][scene].append({'fn': path, 'frame': frame, 'tstamp': tstamp})
@@ -128,10 +135,7 @@ class proxDataset(Dataset):
                 lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21, 3),
                 [in_data, pred_data])
         elif self.output_type == 'joint_locations':
-            in_skels, pred_skels = map(
-                lambda datas: torch.stack([self.body_model(return_joints=True, betas=torch.Tensor(data['betas']), body_pose=torch.Tensor(data['body_pose'])).joints[0] for data in datas], dim=0),
-                [in_data, pred_data]
-            )
+            in_joint_locations, pred_joint_locations = normalized_joint_locations(in_data, pred_data)
             
 
         if self.output_type == 'raw_pkls':
@@ -139,33 +143,174 @@ class proxDataset(Dataset):
         if self.output_type == 'joint_thetas':
             return (idx, in_skels, pred_skels)
         elif self.output_type == 'joint_locations':
-            return (idx, in_skels, pred_skels)
+            return (idx, in_joint_locations, pred_joint_locations)
 
         return (idx, in_skels, pred_skels) if not self.verbose else (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
 
 
+class DatasetBase(Dataset):
+    def __init__(self, root_dir='./', in_frames=10, pred_frames=5, search_prefix='results', extra_prefix='000.pkl'):
+        self.root_dir = Path(root_dir)
 
-class proxDatasetJoints(proxDataset):
-    def __init__(self, root_dir):
-        super().__init__(root_dir, output_type='raw_pkls')  # for pkl loading.
-        self.seq_lens = np.array([len(fns_dict) for stem, fns_dict in self.sequences])
-        self.seq_lens = np.cumsum(self.seq_lens)
-        
+        scenes = glob.glob(str(self.root_dir / '*'))
+        scenes = [Path(scene) for scene in scenes]
+        scenes_dir = {scene.name: list(map(Path, glob.glob(str(scene / search_prefix / '*')))) for scene in scenes}
+        scenes_dir = {stem: [(str(path / (extra_prefix if extra_prefix else '')), path.name)  for path in paths] \
+            for stem, paths in scenes_dir.items()}
+        outputs = {}
+        for stem, paths in scenes_dir.items():
+            if not stem in outputs:
+                outputs[stem] = {}
+            for path, name in paths:
+                # last group is an optionally matching thing to catch e.g. .jpg, .png if it's not a folder
+                scene, frame, tstamp = re.match(r's(\d*)_frame_(\d*)__((?:\d*[.]){3}\d*)(?:[.].*)?', name).groups()
+                scene, frame = int(scene), int(frame)
+                try:
+                    tstamp = dt.datetime.strptime(tstamp, '%H.%M.%S.%f').time()
+                except Exception as e:
+                    print(tstamp)
+                    print(name)
+                    print(e.message, e.args)
+                    raise e
+                if scene not in outputs[stem]:
+                    outputs[stem][scene] = []
+                outputs[stem][scene].append({'fn': path, 'frame': frame, 'tstamp': tstamp})
+
+        sequences = []
+        for stem in outputs:
+            for scene, frame_dicts in outputs[stem].items():
+                sequences.append([stem, sorted(frame_dicts, key=lambda x: x['frame'])])
+
+        # ('BasementSittingBooth_00142_01',
+        # [{'fn': 'D:\\prox_data\\PROXD_attempt2\\PROXD\\BasementSittingBooth_00142_01\\results\\s001_frame_00001__00.00.00.029\\000.pkl',
+        # 'frame': 1,
+        # 'tstamp': datetime.time(0, 0, 0, 29000)},
+        # {'fn': 'D:\\prox_data\\PROXD_attempt2\\PROXD\\BasementSittingBooth_00142_01\\results\\s001_frame_00002__00.00.00.050\\000.pkl',
+        # 'frame': 2, ...])
+        # (around 1500 frames per sequence). Mutiple sequences will be in a similar 3D environment, e.g. 
+        # [stem for stem, fns_dict in sequences.items()]
+            # 'BasementSittingBooth_00142_01',
+            # 'BasementSittingBooth_00145_01',
+            # 'BasementSittingBooth_03452_01',
+            # 'MPH11_00034_01',
+            # 'MPH11_00150_01', ...
+        self.sequences = sequences
+        # for debugging
+        self.scenes_dir = scenes_dir
+        self.outputs = outputs
+
+        self.in_frames = in_frames
+        self.pred_frames = pred_frames
+        self.tot_frames = in_frames + pred_frames
+        seq_lens = [len(fns_dict) for stem, fns_dict in sequences]
+        self.bounds = np.array([seq_len // self.tot_frames for seq_len in seq_lens])  # e.g. 
+        assert(np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
+        self.bounds = np.cumsum(self.bounds)
+
+
     def __len__(self):
-        return self.seq_lens[-1]  # now each individual file is a full in and pred training point
+        return self.bounds[-1]
+    
+    def __getitem__(self, idx):
+        seq_idx = np.digitize(idx, self.bounds)
+        assert seq_idx < len(self.bounds), "idx too big"
+        idx_in_seq = idx - (self.bounds[seq_idx-1] if seq_idx > 0 else 0)
+        start = idx_in_seq*self.tot_frames
+
+        in_frames_dicts = self.sequences[seq_idx][1][start:start+self.in_frames:1]
+        pred_frames_dicts = self.sequences[seq_idx][1][start+self.in_frames:start+self.tot_frames:1]
+        in_frames_fns = [frame_dict['fn'] for frame_dict in in_frames_dicts]
+        pred_frames_fns = [frame_dict['fn'] for frame_dict in pred_frames_dicts]
+
+        return in_frames_dicts, in_frames_fns, pred_frames_dicts, pred_frames_fns
+
+class proxDatasetSkeleton(DatasetBase):
+    def __init__(self, output_type='joint_locations', smplx_model_path=None, **kwargs):
+        super().__init__(**kwargs)
+        
+        # NB output_type='joint_locations' is deprecated in favor of preprocess_joint_locs.py (which could be ported in here tbh)
+        if not output_type in ['joint_locations', 'joint_thetas', 'raw_pkls']:
+            raise Exception("output_type should be one of ['joint_locations', 'joint_thetas', 'raw_pkls']")
+
+        # we need a body model to convert beta, theta and global translation into 3D joint locations.
+        if output_type == 'joint_locations':
+            # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+            body_model = smplx.create(smplx_model_path, 
+                          model_type='smplx',        ## smpl, smpl+h, or smplx?
+                          gender='neutral', ext='npz',  ## file format 
+                          num_pca_comps=12,          ## MANO hand pose pca component
+                          create_global_orient=True, 
+                          create_body_pose=True,
+                          create_betas=True,
+                          create_left_hand_pose=True,
+                          create_right_hand_pose=True,
+                          create_expression=True, 
+                          create_jaw_pose=True,
+                          create_leye_pose=True,
+                          create_reye_pose=True,
+                          create_transl=True,
+                          batch_size=1               ## how many bodies in a batch?
+                          )
+            body_model.eval()
+            self.body_model = body_model
+
+        self.output_type = output_type
 
     def __getitem__(self, idx):
-        seq_idx = np.digitize(idx, self.seq_lens)
-        assert seq_idx < len(self.seq_lens), "idx too big"
-        idx_in_seq = idx - (self.seq_lens[seq_idx-1] if seq_idx > 0 else 0)
-        start = idx_in_seq
+        _in_frames_dicts, in_frames_fns, _pred_frames_dicts, pred_frames_fns = super().__getitem__(idx)
+        
+        in_data, pred_data = map(lambda fns: [load(fn) for fn in fns],  [in_frames_fns, pred_frames_fns])
+        # In event of failed file read, have arrays of appropriate shape but filled with nans - these training pairs
+        # will be filtered out by our defined collate_fn in batching.
+        if None in in_data or None in pred_data:
+            # in_skels, pred_skels = nans_of_shape((self.in_frames, 21, 3)), nans_of_shape((self.pred_frames, 21, 3))
+            in_skels, pred_skels = None, None
+        elif self.output_type == 'joint_thetas':  # .reshape(-1, 21, 3)
+            in_skels, pred_skels = map(
+                lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21, 3),
+                [in_data, pred_data])
+        elif self.output_type == 'joint_locations':
+            in_joint_locations, pred_joint_locations = normalized_joint_locations(in_data, pred_data)
+            
 
-        frame_seq_dict = self.sequences[seq_idx][1][start]
-        fn = frame_seq_dict['fn']
-        frame_seq_data = load(fn)
-        in_joint_locations, pred_joint_locations = frame_seq_data['in_joint_locations'], frame_seq_data['pred_joint_locations']
+        if self.output_type == 'raw_pkls':
+            return (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
+        if self.output_type == 'joint_thetas':
+            return (idx, in_skels, pred_skels)
+        elif self.output_type == 'joint_locations':
+            return (idx, in_joint_locations, pred_joint_locations)
 
-        return (idx, in_joint_locations, pred_joint_locations)
+        return (idx, in_skels, pred_skels) if not self.verbose else (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
+
+
+proxDatasetJoints = proxDatasetSkeleton  # backwards compatibility
+
+class proxDatasetImages(Dataset):
+    def __init__(self, root_dir='./', in_frames=10, pred_frames=5):
+        self.root_dir = root_dir
+
+        self.in_frames = in_frames
+        self.pred_frames = pred_frames
+
+        self.datasets = {}
+        self.datasets['color'] = DatasetBase(root_dir=root_dir, in_frames=in_frames, pred_frames=pred_frames,
+            search_prefix='Color', extra_prefix='')
+        self.datasets['depth'] = DatasetBase(root_dir=root_dir, in_frames=in_frames, pred_frames=pred_frames,
+            search_prefix='Depth', extra_prefix='')
+
+        self.lengths = []
+        for d in self.datasets.items():
+            self.lengths.append(len(d))
+
+        assert self.lengths == self.lengths[0]* len(self.lengths)
+
+    def __len__(self):
+        return self.lengths[0]
+
+    def __getitem__(self, idx):
+        in_frames_dicts, in_frames_fns, pred_frames_dicts, pred_frames_fns = self.datasets['Color'].__getitem__(idx)
+
+    
 
 
 

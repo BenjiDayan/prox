@@ -25,7 +25,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import pyrender
+# import pyrender
 
 def to_tensor(tensor, dtype=torch.float32):
     if torch.Tensor == type(tensor):

@@ -87,7 +87,7 @@ class PoseGRU_inputFC2(nn.Module):
             cur_state = self.hidden[i]  # input to next layer: output h of current layer  [bs, hidden_size]
 
         output = self.fc1(cur_state)  # [bs, np.product(input_size)]
-        # TODO residual??????
+        # residual
         output += input
         output = output.view((bs,) + self.input_size)
         return cur_state, output  # gru state [bs, hidden_size], output [bs, 3, 21]
