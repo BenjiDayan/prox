@@ -20,15 +20,17 @@ from utils import normalized_joint_locations
 def load(fn):
     try:
         with open(fn, 'rb') as file:
-            return pickle.load(file) 
+            return pickle.load(file)
     except FileNotFoundError:
         return None
+
 
 def nans_of_shape(shape):
     out = np.empty(shape)
     out[:] = np.nan
     return out
-    
+
+
 # TODO deprecate
 class proxDataset(Dataset):
     def __init__(self, root_dir, in_frames=10, pred_frames=5, output_type='joint_locations', smplx_model_path=None):
@@ -37,25 +39,25 @@ class proxDataset(Dataset):
             raise Exception("output_type should be one of ['joint_locations', 'joint_thetas', 'raw_pkls']")
 
         # we need a body model to convert beta, theta and global translation into 3D joint locations.
-        if output_type == 'joint_locations':
-            body_model = smplx.create(smplx_model_path, 
-                          model_type='smplx',        ## smpl, smpl+h, or smplx?
-                          gender='neutral', ext='npz',  ## file format 
-                          num_pca_comps=12,          ## MANO hand pose pca component
-                          create_global_orient=True, 
-                          create_body_pose=True,
-                          create_betas=True,
-                          create_left_hand_pose=True,
-                          create_right_hand_pose=True,
-                          create_expression=True, 
-                          create_jaw_pose=True,
-                          create_leye_pose=True,
-                          create_reye_pose=True,
-                          create_transl=True,
-                          batch_size=1               ## how many bodies in a batch?
-                          )
-            body_model.eval()
-            self.body_model = body_model
+
+        body_model = smplx.create(smplx_model_path,
+                                  model_type='smplx',  ## smpl, smpl+h, or smplx?
+                                  gender='neutral', ext='npz',  ## file format
+                                  num_pca_comps=12,  ## MANO hand pose pca component
+                                  create_global_orient=True,
+                                  create_body_pose=True,
+                                  create_betas=True,
+                                  create_left_hand_pose=True,
+                                  create_right_hand_pose=True,
+                                  create_expression=True,
+                                  create_jaw_pose=True,
+                                  create_leye_pose=True,
+                                  create_reye_pose=True,
+                                  create_transl=True,
+                                  batch_size=1  ## how many bodies in a batch?
+                                  )
+        body_model.eval()
+        self.body_model = body_model
 
         self.output_type = output_type
         self.root_dir = Path(root_dir)
@@ -63,7 +65,8 @@ class proxDataset(Dataset):
         scenes = glob.glob(str(self.root_dir / '*'))
         scenes = [Path(scene) for scene in scenes]
         scenes_dir = {scene.name: list(map(Path, glob.glob(str(scene / 'results/*')))) for scene in scenes}
-        scenes_dir2 = {stem: [(str(path / '000.pkl'), path.name)  for path in paths] for stem, paths in scenes_dir.items()}
+        scenes_dir2 = {stem: [(str(path / '000.pkl'), path.name) for path in paths] for stem, paths in
+                       scenes_dir.items()}
         outputs = {}
         for stem, paths in scenes_dir2.items():
             if not stem in outputs:
@@ -92,39 +95,37 @@ class proxDataset(Dataset):
         # 'tstamp': datetime.time(0, 0, 0, 29000)},
         # {'fn': 'D:\\prox_data\\PROXD_attempt2\\PROXD\\BasementSittingBooth_00142_01\\results\\s001_frame_00002__00.00.00.050\\000.pkl',
         # 'frame': 2, ...])
-        # (around 1500 frames per sequence). Mutiple sequences will be in a similar 3D environment, e.g. 
+        # (around 1500 frames per sequence). Mutiple sequences will be in a similar 3D environment, e.g.
         # [stem for stem, fns_dict in sequences.items()]
-            # 'BasementSittingBooth_00142_01',
-            # 'BasementSittingBooth_00145_01',
-            # 'BasementSittingBooth_03452_01',
-            # 'MPH11_00034_01',
-            # 'MPH11_00150_01', ...
+        # 'BasementSittingBooth_00142_01',
+        # 'BasementSittingBooth_00145_01',
+        # 'BasementSittingBooth_03452_01',
+        # 'MPH11_00034_01',
+        # 'MPH11_00150_01', ...
         self.sequences = sequences
         self.in_frames = in_frames
         self.pred_frames = pred_frames
         self.tot_frames = in_frames + pred_frames
         seq_lens = [len(fns_dict) for stem, fns_dict in sequences]
-        self.bounds = np.array([seq_len // self.tot_frames for seq_len in seq_lens])  # e.g. 
-        assert(np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
+        self.bounds = np.array([seq_len // self.tot_frames for seq_len in seq_lens])  # e.g.
+        assert (np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
         self.bounds = np.cumsum(self.bounds)
-
 
     def __len__(self):
         return self.bounds[-1]
-    
+
     def __getitem__(self, idx):
         seq_idx = np.digitize(idx, self.bounds)
         assert seq_idx < len(self.bounds), "idx too big"
-        idx_in_seq = idx - (self.bounds[seq_idx-1] if seq_idx > 0 else 0)
-        start = idx_in_seq*self.tot_frames
+        idx_in_seq = idx - (self.bounds[seq_idx - 1] if seq_idx > 0 else 0)
+        start = idx_in_seq * self.tot_frames
 
-        in_frames_dicts = self.sequences[seq_idx][1][start:start+self.in_frames:1]
-        pred_frames_dicts = self.sequences[seq_idx][1][start+self.in_frames:start+self.tot_frames:1]
+        in_frames_dicts = self.sequences[seq_idx][1][start:start + self.in_frames:1]
+        pred_frames_dicts = self.sequences[seq_idx][1][start + self.in_frames:start + self.tot_frames:1]
         in_frames_fns = [frame_dict['fn'] for frame_dict in in_frames_dicts]
         pred_frames_fns = [frame_dict['fn'] for frame_dict in pred_frames_dicts]
 
-        
-        in_data, pred_data = map(lambda fns: [load(fn) for fn in fns],  [in_frames_fns, pred_frames_fns])
+        in_data, pred_data = map(lambda fns: [load(fn) for fn in fns], [in_frames_fns, pred_frames_fns])
         # In event of failed file read, have arrays of appropriate shape but filled with nans - these training pairs
         # will be filtered out by our defined collate_fn in batching.
         if None in in_data or None in pred_data:
@@ -132,11 +133,11 @@ class proxDataset(Dataset):
             in_skels, pred_skels = None, None
         elif self.output_type == 'joint_thetas':  # .reshape(-1, 21, 3)
             in_skels, pred_skels = map(
-                lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21, 3),
+                lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21,
+                                                                                                              3),
                 [in_data, pred_data])
         elif self.output_type == 'joint_locations':
-            in_joint_locations, pred_joint_locations = normalized_joint_locations(in_data, pred_data)
-            
+            in_joint_locations, pred_joint_locations = normalized_joint_locations(in_data, pred_data, self.body_model)
 
         if self.output_type == 'raw_pkls':
             return (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
@@ -145,7 +146,8 @@ class proxDataset(Dataset):
         elif self.output_type == 'joint_locations':
             return (idx, in_joint_locations, pred_joint_locations)
 
-        return (idx, in_skels, pred_skels) if not self.verbose else (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
+        return (idx, in_skels, pred_skels) if not self.verbose else (
+        idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
 
 
 class DatasetBase(Dataset):
@@ -155,8 +157,8 @@ class DatasetBase(Dataset):
         scenes = glob.glob(str(self.root_dir / '*'))
         scenes = [Path(scene) for scene in scenes]
         scenes_dir = {scene.name: list(map(Path, glob.glob(str(scene / search_prefix / '*')))) for scene in scenes}
-        scenes_dir = {stem: [(str(path / (extra_prefix if extra_prefix else '')), path.name)  for path in paths] \
-            for stem, paths in scenes_dir.items()}
+        scenes_dir = {stem: [(str(path / (extra_prefix if extra_prefix else '')), path.name) for path in paths] \
+                      for stem, paths in scenes_dir.items()}
         outputs = {}
         for stem, paths in scenes_dir.items():
             if not stem in outputs:
@@ -187,13 +189,13 @@ class DatasetBase(Dataset):
         # 'tstamp': datetime.time(0, 0, 0, 29000)},
         # {'fn': 'D:\\prox_data\\PROXD_attempt2\\PROXD\\BasementSittingBooth_00142_01\\results\\s001_frame_00002__00.00.00.050\\000.pkl',
         # 'frame': 2, ...])
-        # (around 1500 frames per sequence). Mutiple sequences will be in a similar 3D environment, e.g. 
+        # (around 1500 frames per sequence). Mutiple sequences will be in a similar 3D environment, e.g.
         # [stem for stem, fns_dict in sequences.items()]
-            # 'BasementSittingBooth_00142_01',
-            # 'BasementSittingBooth_00145_01',
-            # 'BasementSittingBooth_03452_01',
-            # 'MPH11_00034_01',
-            # 'MPH11_00150_01', ...
+        # 'BasementSittingBooth_00142_01',
+        # 'BasementSittingBooth_00145_01',
+        # 'BasementSittingBooth_03452_01',
+        # 'MPH11_00034_01',
+        # 'MPH11_00150_01', ...
         self.sequences = sequences
         # for debugging
         self.scenes_dir = scenes_dir
@@ -203,31 +205,31 @@ class DatasetBase(Dataset):
         self.pred_frames = pred_frames
         self.tot_frames = in_frames + pred_frames
         seq_lens = [len(fns_dict) for stem, fns_dict in sequences]
-        self.bounds = np.array([seq_len // self.tot_frames for seq_len in seq_lens])  # e.g. 
-        assert(np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
+        self.bounds = np.array([seq_len // self.tot_frames for seq_len in seq_lens])  # e.g.
+        assert (np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
         self.bounds = np.cumsum(self.bounds)
-
 
     def __len__(self):
         return self.bounds[-1]
-    
+
     def __getitem__(self, idx):
         seq_idx = np.digitize(idx, self.bounds)
         assert seq_idx < len(self.bounds), "idx too big"
-        idx_in_seq = idx - (self.bounds[seq_idx-1] if seq_idx > 0 else 0)
-        start = idx_in_seq*self.tot_frames
+        idx_in_seq = idx - (self.bounds[seq_idx - 1] if seq_idx > 0 else 0)
+        start = idx_in_seq * self.tot_frames
 
-        in_frames_dicts = self.sequences[seq_idx][1][start:start+self.in_frames:1]
-        pred_frames_dicts = self.sequences[seq_idx][1][start+self.in_frames:start+self.tot_frames:1]
+        in_frames_dicts = self.sequences[seq_idx][1][start:start + self.in_frames:1]
+        pred_frames_dicts = self.sequences[seq_idx][1][start + self.in_frames:start + self.tot_frames:1]
         in_frames_fns = [frame_dict['fn'] for frame_dict in in_frames_dicts]
         pred_frames_fns = [frame_dict['fn'] for frame_dict in pred_frames_dicts]
 
         return in_frames_dicts, in_frames_fns, pred_frames_dicts, pred_frames_fns
 
+
 class proxDatasetSkeleton(DatasetBase):
     def __init__(self, output_type='joint_locations', smplx_model_path=None, **kwargs):
         super().__init__(**kwargs)
-        
+
         # NB output_type='joint_locations' is deprecated in favor of preprocess_joint_locs.py (which could be ported in here tbh)
         if not output_type in ['joint_locations', 'joint_thetas', 'raw_pkls']:
             raise Exception("output_type should be one of ['joint_locations', 'joint_thetas', 'raw_pkls']")
@@ -235,22 +237,22 @@ class proxDatasetSkeleton(DatasetBase):
         # we need a body model to convert beta, theta and global translation into 3D joint locations.
         if output_type == 'joint_locations':
             # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-            body_model = smplx.create(smplx_model_path, 
-                          model_type='smplx',        ## smpl, smpl+h, or smplx?
-                          gender='neutral', ext='npz',  ## file format 
-                          num_pca_comps=12,          ## MANO hand pose pca component
-                          create_global_orient=True, 
-                          create_body_pose=True,
-                          create_betas=True,
-                          create_left_hand_pose=True,
-                          create_right_hand_pose=True,
-                          create_expression=True, 
-                          create_jaw_pose=True,
-                          create_leye_pose=True,
-                          create_reye_pose=True,
-                          create_transl=True,
-                          batch_size=1               ## how many bodies in a batch?
-                          )
+            body_model = smplx.create(smplx_model_path,
+                                      model_type='smplx',  ## smpl, smpl+h, or smplx?
+                                      gender='neutral', ext='npz',  ## file format
+                                      num_pca_comps=12,  ## MANO hand pose pca component
+                                      create_global_orient=True,
+                                      create_body_pose=True,
+                                      create_betas=True,
+                                      create_left_hand_pose=True,
+                                      create_right_hand_pose=True,
+                                      create_expression=True,
+                                      create_jaw_pose=True,
+                                      create_leye_pose=True,
+                                      create_reye_pose=True,
+                                      create_transl=True,
+                                      batch_size=1  ## how many bodies in a batch?
+                                      )
             body_model.eval()
             self.body_model = body_model
 
@@ -258,8 +260,8 @@ class proxDatasetSkeleton(DatasetBase):
 
     def __getitem__(self, idx):
         _in_frames_dicts, in_frames_fns, _pred_frames_dicts, pred_frames_fns = super().__getitem__(idx)
-        
-        in_data, pred_data = map(lambda fns: [load(fn) for fn in fns],  [in_frames_fns, pred_frames_fns])
+
+        in_data, pred_data = map(lambda fns: [load(fn) for fn in fns], [in_frames_fns, pred_frames_fns])
         # In event of failed file read, have arrays of appropriate shape but filled with nans - these training pairs
         # will be filtered out by our defined collate_fn in batching.
         if None in in_data or None in pred_data:
@@ -267,11 +269,11 @@ class proxDatasetSkeleton(DatasetBase):
             in_skels, pred_skels = None, None
         elif self.output_type == 'joint_thetas':  # .reshape(-1, 21, 3)
             in_skels, pred_skels = map(
-                lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21, 3),
+                lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21,
+                                                                                                              3),
                 [in_data, pred_data])
         elif self.output_type == 'joint_locations':
-            in_joint_locations, pred_joint_locations = normalized_joint_locations(in_data, pred_data)
-            
+            in_joint_locations, pred_joint_locations = normalized_joint_locations(in_data, pred_data, self.body_model)
 
         if self.output_type == 'raw_pkls':
             return (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
@@ -280,10 +282,12 @@ class proxDatasetSkeleton(DatasetBase):
         elif self.output_type == 'joint_locations':
             return (idx, in_joint_locations, pred_joint_locations)
 
-        return (idx, in_skels, pred_skels) if not self.verbose else (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
+        return (idx, in_skels, pred_skels) if not self.verbose else (
+        idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
 
 
 proxDatasetJoints = proxDatasetSkeleton  # backwards compatibility
+
 
 class proxDatasetImages(Dataset):
     def __init__(self, root_dir='./', in_frames=10, pred_frames=5):
@@ -294,24 +298,21 @@ class proxDatasetImages(Dataset):
 
         self.datasets = {}
         self.datasets['color'] = DatasetBase(root_dir=root_dir, in_frames=in_frames, pred_frames=pred_frames,
-            search_prefix='Color', extra_prefix='')
+                                             search_prefix='Color', extra_prefix='')
         self.datasets['depth'] = DatasetBase(root_dir=root_dir, in_frames=in_frames, pred_frames=pred_frames,
-            search_prefix='Depth', extra_prefix='')
+                                             search_prefix='Depth', extra_prefix='')
 
         self.lengths = []
         for d in self.datasets.items():
             self.lengths.append(len(d))
 
-        assert self.lengths == self.lengths[0]* len(self.lengths)
+        assert self.lengths == self.lengths[0] * len(self.lengths)
 
     def __len__(self):
         return self.lengths[0]
 
     def __getitem__(self, idx):
         in_frames_dicts, in_frames_fns, pred_frames_dicts, pred_frames_fns = self.datasets['Color'].__getitem__(idx)
-
-    
-
 
 
 #  doesn't exist. there's 02919, 02920, 02970 then 02950 weirdly
@@ -322,7 +323,8 @@ def my_collate(batch):
     # I think these are still np.arrays, will become tensors later
     batch = list(filter(
         # check that they exist and don't have nans??
-        lambda triple: (triple[1] is not None) and (triple[2] is not None) and (not torch.any(torch.isnan(triple[1]))) and (not torch.any(torch.isnan(triple[2]))),
+        lambda triple: (triple[1] is not None) and (triple[2] is not None) and (
+            not torch.any(torch.isnan(triple[1]))) and (not torch.any(torch.isnan(triple[2]))),
         batch
     ))
     return default_collate(batch)
