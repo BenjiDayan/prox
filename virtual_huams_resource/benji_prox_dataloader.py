@@ -1,4 +1,5 @@
 import os
+import cv2
 import torch
 # import pandas as pd
 # from skimage import io, transform
@@ -13,6 +14,7 @@ import re
 import datetime as dt
 import pickle
 import smplx
+from projection_utils import Projection
 
 from utils import normalized_joint_locations
 
@@ -287,6 +289,25 @@ class proxDatasetSkeleton(DatasetBase):
 
 
 proxDatasetJoints = proxDatasetSkeleton  # backwards compatibility
+
+class proxDatasetProximityMap(Dataset):
+    def __init__(self, fittings_dir, depth_dir, calibration_dir):
+        self.skelDataset = proxDatasetSkeleton(root_dir=fittings_dir, output_type='raw_pkls', in_frames=1, pred_frames=0)
+        depth_dir = Path(depth_dir)
+        self.depthDataset = DatasetBase(root_dir=depth_dir, search_prefix='Depth', extra_prefix='', in_frames=1, pred_frames=0)
+        self.proj = Projection(calib_dir=calibration_dir)
+
+    def __len__(self):
+        return len(self.depthDataset)
+    def __getitem__(self, idx):
+        in_frames_dicts, in_frames_fns_img, _, _ = self.depthDataset.__getitem__(idx)
+        depth_img = [cv2.imread(fn, flags=-1).astype(float) for fn in in_frames_fns_img][0]
+        depth_img = cv2.flip(depth_img, 1)
+
+        (idx, (in_frames_fns_skel, in_data), (pred_frames_fns, pred_data)) = self.skelDataset.__getitem__(idx)
+        skeleton_dict = in_data[0]
+        return in_frames_fns_img[0], in_frames_fns_skel[0], depth_img, skeleton_dict
+
 
 
 class proxDatasetImages(Dataset):
