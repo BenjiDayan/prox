@@ -28,6 +28,7 @@ class PositionalEncoding(nn.Module):
         
     def forward(self, token_embedding: torch.tensor) -> torch.tensor:
         # Residual connection + pos encoding
+        # @Benji: guessing that token_embedding's 0th dim is token number, and this is < max_len, presumably mostly equal.
         return self.dropout(token_embedding + self.pos_encoding[:token_embedding.size(0), :])
 
 class PoseTransformer(nn.Module):
@@ -47,6 +48,8 @@ class PoseTransformer(nn.Module):
         self.positional_encoder = PositionalEncoding(
             dim_model=dim_model, dropout_p=dropout_p, max_len=max_seq_len
         )
+
+        # This is our embedding function (just as NLP would use word2vec to embed each word as a vector).
         self.fc1 = nn.Linear(num_tokens, dim_model//2)
         self.fc2 = nn.Linear(dim_model//2, dim_model)
 
@@ -102,5 +105,7 @@ class PoseTransformer(nn.Module):
         out = self.out(transformer_out)
 
         out = out.permute(1,0,2)
+        # TODO is correct?
+        out = out + src
         
         return out
