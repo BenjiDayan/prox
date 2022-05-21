@@ -1,0 +1,21 @@
+{
+    "os": "Linux-3.10.0-1160.59.1.el7.x86_64-x86_64-with-glibc2.2.5",
+    "python": "3.8.5",
+    "heartbeatAt": "2022-05-21T16:20:02.850130",
+    "startedAt": "2022-05-21T16:19:57.442943",
+    "docker": null,
+    "cpu_count": 128,
+    "cuda": null,
+    "args": null,
+    "state": "running",
+    "program": "<python with no main file>",
+    "git": {
+        "remote": "git@github.com:BenjiDayan/prox.git",
+        "commit": "45565f2005fd1b6d7b08729f4f890169e64c340d"
+    },
+    "email": null,
+    "root": "/cluster/home/bdayan/prox/prox",
+    "host": "eu-g1-047-1",
+    "username": "bdayan",
+    "executable": "/cluster/home/bdayan/prox/venv38_open3d/bin/python"
+}
