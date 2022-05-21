@@ -36,12 +36,13 @@ def normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_mo
 
 
 def normalized_joint_locations(in_data_dicts, pred_data_dicts, body_model):
+    # TODO rotation normalisation only makes sense about the vector which aligns with gravity, or maybe not at all?
     _betas, _body_pose, base_euler_angles, base_transl = extract_data(in_data_dicts[-1])
     base_rot_matrix = transforms.euler_angles_to_matrix(base_euler_angles, convention='XYZ')
 
-    in_joint_locations = torch.concat(
+    in_joint_locations = torch.cat(
         [normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_model) for data_dict in in_data_dicts], dim=0)
-    pred_joint_locations = torch.concat(
+    pred_joint_locations = torch.cat(
         [normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_model) for data_dict in pred_data_dicts], dim=0)
 
     return in_joint_locations, pred_joint_locations

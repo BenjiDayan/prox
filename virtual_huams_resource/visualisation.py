@@ -1,3 +1,4 @@
+import time
 from typing import List
 import numpy as np # for data manipulation
 print('numpy: %s' % np.__version__) # print version
@@ -15,20 +16,22 @@ import tqdm
 import matplotlib.pyplot as plt
 import logging
 
-from IPython.core.interactiveshell import InteractiveShell
-InteractiveShell.ast_node_interactivity = "all"
+import open3d as o3d
 
-import os
-os.chdir('../')
-import os.path as osp
+# from IPython.core.interactiveshell import InteractiveShell
+# InteractiveShell.ast_node_interactivity = "all"
+
+# import os
+# os.chdir('../')
+# import os.path as osp
 
 from pose_gru import PoseGRU_inputFC2
 from benji_prox_dataloader import *
 
 
-os.environ['PYOPENGL_PLATFORM']= 'osmesa'  # our offscreen renderer will use OSMesa not Pyglet which is good as we don't have an active display manager on euler
-# https://github.com/mkocabas/VIBE/issues/47 seems like maybe egl won't work
-os.environ['MUJOCO_GL']= 'osmesa'
+# os.environ['PYOPENGL_PLATFORM']= 'osmesa'  # our offscreen renderer will use OSMesa not Pyglet which is good as we don't have an active display manager on euler
+# # https://github.com/mkocabas/VIBE/issues/47 seems like maybe egl won't work
+# os.environ['MUJOCO_GL']= 'osmesa'
 
 import pyrender
 import PIL.Image as pil_img
@@ -135,19 +138,99 @@ def smplx_and_background_to_video(images: List[np.ndarray], smplx_dicts: List[di
     return outputs
 
 
-    plt.imshow(image)
-    plt.figure()
-    plt.imshow(color)
-    plt.figure()
-    plt.imshow(depth)
-    plt.figure()
-    plt.imshow(torch.tensor(image))
-    plt.figure()
-    plt.imshow(torch.tensor(image).detach().cpu().numpy())
-    plt.imshow(output_img)
+LIMBS = [(23, 15),
+         (24, 15),
+         (15, 22),
+         (22, 12),
+         # left arm
+         (12, 13),
+         (13, 16),
+         (16, 18),
+         (18, 20),
+         # right arm
+         (12, 14),
+         (14, 17),
+         (17, 19),
+         (19, 21),
+         # spline
+         (12, 9),
+         (9, 6),
+         (6, 3),
+         (3, 0),
+         # left leg
+         (0, 1),
+         (1, 4),
+         (4, 7),
+         (7, 10),
+         # right leg
+         (0, 2),
+         (2, 5),
+         (5, 8),
+         (8, 11)]
 
-    output_img2 = pil_img.fromarray((output_img * 255).astype(np.uint8))
-    output_img2.save(out_img_fn)
+color_input = np.zeros([len(LIMBS), 3])
+color_input[:, 0] = 1.0
+
+def animate_skeleton(skeleton_frames):
+
+        
+    trans = np.eye(4)
+    trans[:3, :3] = np.array([[0, 0, -1], [-1, 0, 0], [0, -1, 0]])
+    rx = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+    ry = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+    rz = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    # trans[:3, :3] = trans[:3, :3]@rz@rz@rz@ry
+    # trans[:3, -1] = np.array([0, 0, -3])
+    trans[:3, :3] = trans[:3, :3]@rz@rz@rz
+    trans[:3, -1] = np.array([5, 0, 3])
+
+    mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+    vis.add_geometry(mesh_frame)  
+    for t in range(skeleton_frames.shape[0]):  
+        print(t)
+        skeleton_input = o3d.geometry.LineSet(
+            points=o3d.utility.Vector3dVector(skeleton_frames[t]),
+            lines=o3d.utility.Vector2iVector(LIMBS))
+        skeleton_input.colors = o3d.utility.Vector3dVector(color_input)
+
+        vis.add_geometry(skeleton_input)
+
+        ctr = vis.get_view_control()
+        cam_param = ctr.convert_to_pinhole_camera_parameters()
+        cam_param = update_cam(cam_param, trans)
+        ctr.convert_from_pinhole_camera_parameters(cam_param)
+
+        vis.poll_events()
+        vis.update_renderer()
+        time.sleep(0.5)
+        vis.remove_geometry(skeleton_input)
+
+
+def update_cam(cam_param, trans):
+    cam_R = np.transpose(trans[:-1, :-1])
+    cam_T = -trans[:-1, -1:]
+    cam_T = np.matmul(cam_R, cam_T)  # T is applied in the rotated coord
+    cam_aux = np.array([[0, 0, 0, 1]])
+    mat = np.concatenate([cam_R, cam_T], axis=-1)
+    mat = np.concatenate([mat, cam_aux], axis=0)
+    cam_param.extrinsic = mat
+    return cam_param
+
+# plt.imshow(image)
+# plt.figure()
+# plt.imshow(color)
+# plt.figure()
+# plt.imshow(depth)
+# plt.figure()
+# plt.imshow(torch.tensor(image))
+# plt.figure()
+# plt.imshow(torch.tensor(image).detach().cpu().numpy())
+# plt.imshow(output_img)
+
+# output_img2 = pil_img.fromarray((output_img * 255).astype(np.uint8))
+# output_img2.save(out_img_fn)
 
 # ##redering body+scene
 # body_mesh = pyrender.Mesh.from_trimesh(
