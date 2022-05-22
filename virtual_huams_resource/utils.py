@@ -5,17 +5,27 @@ from matplotlib import scale
 import numpy as np
 import torch
 from pytorch3d import transforms
-<<<<<<< HEAD
 import numpy as np
 import scipy.ndimage as img_fn
 
-=======
 import pickle
 from pathlib import Path
 import smplx
 import tqdm
 import open3d as o3d
->>>>>>> 101c5b092c3bf88839ee3ff319e7ffbb812e7e2e
+
+# 30 fps. We want to have input 5 seconds and predict 10 seconds. So maybe sample 3 fps, 15 input frames and 30 prediction frames.
+
+def get_fps(things, offset=5, samples=50):
+    """things is a list of dictionaries describing files with a 'tstamp' key of datetime.time value type.
+    Sample evenly adjacent tstamp differences to get fps.
+    Seems about 30. Ofc could have not done i+1 - i but ahhhhh."""
+    import datetime
+    samples = np.arange(offset, len(things)-2, len(things)//samples)
+    deltas = [(things[i]['tstamp'], things[i+1]['tstamp']) for i in samples]
+    deltas = [datetime.datetime.combine(datetime.date.today(), b) - datetime.datetime.combine(datetime.date.today(), a) for a, b in deltas]
+    return list(map(lambda x: x.total_seconds(), deltas))
+
 
 def normalize_euler_angles(base_rot_matrix, euler_angles):
     old_rot_matrix = transforms.euler_angles_to_matrix(euler_angles, convention='XYZ')
@@ -43,8 +53,10 @@ def normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_mo
 
 def normalized_joint_locations(in_data_dicts, pred_data_dicts, body_model):
     # TODO rotation normalisation only makes sense about the vector which aligns with gravity, or maybe not at all?
+    #  for now we take it out
     _betas, _body_pose, base_euler_angles, base_transl = extract_data(in_data_dicts[-1])
     base_rot_matrix = transforms.euler_angles_to_matrix(base_euler_angles, convention='XYZ')
+    base_rot_matrix=torch.eye(3).reshape((1, 3, 3))
 
     in_joint_locations = torch.cat(
         [normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_model) for data_dict in in_data_dicts], dim=0)
@@ -61,7 +73,6 @@ def extract_data(data_dict):
     transl = torch.Tensor(data_dict['transl'])
     return betas, body_pose, global_orient, transl
 
-<<<<<<< HEAD
 def l1_inpainting(f, mask, theta=0.001, maxIter=5000):
     u = np.array((1 - mask) * f)
     mask = np.pad(mask, pad_width=1, mode='edge')
@@ -89,7 +100,6 @@ def l1_inpainting(f, mask, theta=0.001, maxIter=5000):
         u = np.copy(u_c[1:-1, 1:-1])
 
     return u
-=======
 
 def get_smplx_body_model(smplx_model_path):
     body_model = smplx.create(smplx_model_path,
@@ -261,4 +271,3 @@ def point_proximity_map(points, joint_locations):
     body_bps = np.min(dist, axis=-1)   # [n_pt]
     
     return body_bps
->>>>>>> 101c5b092c3bf88839ee3ff319e7ffbb812e7e2e

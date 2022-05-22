@@ -17,14 +17,14 @@ class PoseGRU_inputFC(nn.Module):
         self.hidden_size = hidden_size
         self.n_layers = n_layers
 
-        self.input_fc = nn.Linear(input_size, 512)
+        self.input_fc = nn.Linear(input_size, 512).to(device)
 
         self.GRUcell_list = [torch.nn.GRUCell(input_size=512, hidden_size=hidden_size)]
         for i in range(1, n_layers):
             self.GRUcell_list.append(torch.nn.GRUCell(input_size=hidden_size, hidden_size=hidden_size))
-        self.GRUcell_list = nn.ModuleList(self.GRUcell_list)
+        self.GRUcell_list = nn.ModuleList(self.GRUcell_list).to(device)
 
-        self.fc1 = nn.Linear(hidden_size, input_size)
+        self.fc1 = nn.Linear(hidden_size, input_size).to(device)
 
     def init_hidden(self):
         self.hidden = []  # if n_lalyer=2:   [h, h]   all zeros
@@ -57,14 +57,14 @@ class PoseGRU_inputFC2(nn.Module):
         self.hidden_size = hidden_size
         self.n_layers = n_layers
 
-        self.input_fc = nn.Linear(np.product(input_size), 512)
+        self.input_fc = nn.Linear(np.product(input_size), 512).to(device)
 
         self.GRUcell_list = [torch.nn.GRUCell(input_size=512, hidden_size=hidden_size)]
         for i in range(1, n_layers):
             self.GRUcell_list.append(torch.nn.GRUCell(input_size=hidden_size, hidden_size=hidden_size))
-        self.GRUcell_list = nn.ModuleList(self.GRUcell_list)
+        self.GRUcell_list = nn.ModuleList(self.GRUcell_list).to(device)
 
-        self.fc1 = nn.Linear(hidden_size, np.product(input_size))
+        self.fc1 = nn.Linear(hidden_size, np.product(input_size)).to(device)
 
     def init_hidden(self, batch_size):
         self.hidden = []  # if n_lalyer=2:   [h, h]   all zeros

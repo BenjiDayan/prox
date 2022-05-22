@@ -38,7 +38,7 @@ import PIL.Image as pil_img
 
 import trimesh
 
-def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarray):
+def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarray, mesh_color=(1.0, 1.0, 0.9, 1.0)):
     """
     for data in in_data[1]:
         betas = torch.Tensor(data['betas'])
@@ -77,7 +77,7 @@ def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarra
     material = pyrender.MetallicRoughnessMaterial(
         metallicFactor=0.0,
         alphaMode='OPAQUE',
-        baseColorFactor=(1.0, 1.0, 0.9, 1.0))
+        baseColorFactor=mesh_color)
     body_mesh = pyrender.Mesh.from_trimesh(
         out_mesh, material=material)
 
@@ -111,7 +111,7 @@ def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarra
 
     return body_color, body_depth, output_img
 
-def smplx_and_background_to_video(images: List[np.ndarray], smplx_dicts: List[dict], body_model, output_folder=None):
+def smplx_and_background_to_video(images: List[np.ndarray], smplx_dicts: List[dict], body_model, output_folder=None, mesh_color=(1.0, 1.0, 0.9, 1.0)):
     num_frames = len(images)
     assert num_frames == len(smplx_dicts)
 
@@ -127,7 +127,7 @@ def smplx_and_background_to_video(images: List[np.ndarray], smplx_dicts: List[di
         joints = out.joints[:, :25].squeeze()
         vertices = out.vertices.detach().cpu().numpy().squeeze()
     
-        body_color, body_depth, output_img = render_mesh_on_image(vertices, body_model.faces, image)
+        body_color, body_depth, output_img = render_mesh_on_image(vertices, body_model.faces, image, mesh_color=mesh_color)
 
         if output_folder:
             os.makedirs(output_folder, exist_ok=True)
