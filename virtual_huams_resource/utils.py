@@ -65,6 +65,31 @@ def normalized_joint_locations(in_data_dicts, pred_data_dicts, body_model):
 
     return in_joint_locations, pred_joint_locations
 
+def normalized_joint_locations_world(in_data_dict: dict, body_model, cam2world: torch.tensor):
+    """Converts joint locations of our smplx data dict into world coordinate system.
+    In a sequence you'd want to further translation normalise wrt to the first skeleton pelvis position.
+    Then to reverse you'd reverse translate and then inverse world2cam.
+    """
+    betas, body_pose, global_orient, transl = extract_data(in_data_dict)
+    out = body_model(return_joints=True, betas=betas, body_pose=body_pose, global_orient=global_orient, transl=transl)
+    joint_locs = out.joints[:, :25]  # 1, 25, 3
+    
+    cam_R = cam2world[:3, :3].reshape([3, 3])
+    cam_t = cam2world[:3, 3].reshape([1, 3])
+    joint_locs = torch.matmul(cam_R, joint_locs.permute(0, 2, 1)).permute(0, 2, 1) + cam_t
+
+    return joint_locs
+
+
+def world2cam(joints: torch.Tensor, cam2world: torch.tensor):
+    """joints: ? x 127 x 3 or ? x 25 x 3 I think"""
+    joint_locs = joints[:, :25]
+    cam_R = cam2world[:3, :3].reshape([3, 3])
+    cam_t = cam2world[:3, 3].reshape([1, 3])
+    joint_locs = torch.matmul(torch.inverse(cam_R), (joint_locs - cam_t).permute(0, 2, 1)).permute(0, 2, 1)
+    return joint_locs
+
+
 
 def extract_data(data_dict):
     betas = torch.Tensor(data_dict['betas'])

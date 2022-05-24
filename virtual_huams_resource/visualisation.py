@@ -38,34 +38,79 @@ import PIL.Image as pil_img
 
 import trimesh
 
-def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarray, mesh_color=(1.0, 1.0, 0.9, 1.0)):
+# def render_skeleton_on_image(joint_locations: np.ndarray, img: np.ndarray, mesh_color=(1.0, 1.0, 0.9, 1.0)):
+
+#     H, W = 1080, 1920
+
+#     r = pyrender.OffscreenRenderer(viewport_width=W,
+#                         viewport_height=H,
+#                         point_size=10.0)
+
+#     camera_center = np.array([951.30, 536.77])  # Idk why these, do be quite close to halfway point
+#     camera_pose = np.eye(4)
+#     camera_pose = np.array([1.0, -1.0, -1.0, 1.0]).reshape(-1, 1) * camera_pose
+#     camera = pyrender.camera.IntrinsicsCamera(
+#         fx=1060.53, fy=1060.38,
+#         cx=camera_center[0], cy=camera_center[1])
+#     light = pyrender.DirectionalLight(color=np.ones(3), intensity=2.0)
+
+#     material = pyrender.MetallicRoughnessMaterial(
+#         metallicFactor=0.0,
+#         alphaMode='OPAQUE',
+#         baseColorFactor=mesh_color)
+#     # body_mesh = pyrender.Mesh.from_trimesh(
+#     #     out_mesh, material=material)
+
+#     skel_mesh = pyrender.Mesh.from_points(joint_locations, colors=[mesh_color]*len(joint_locations))
+
+#     H2, W2, _ = img.shape
+#     assert(H2 == H and W2 == W)
+
+#     scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0],
+#                         ambient_light=(0.3, 0.3, 0.3))
+#     scene.add(camera, pose=camera_pose)
+#     scene.add(light, pose=camera_pose)
+#     # for node in light_nodes:
+#     #     scene.add_node(node)
+
+#     scene.add(skel_mesh, 'mesh')
+
+#     r = pyrender.OffscreenRenderer(viewport_width=W,
+#                                 viewport_height=H,
+#                                 point_size=1.0)
+#     body_color, body_depth = r.render(scene, flags=pyrender.RenderFlags.RGBA)
+#     body_color = body_color.astype(np.float32)  / 255.0
+
+#     # valid_mask = (color[:, :, -1] > 0)[:, :, np.newaxis]
+#     # input_img = img
+#     # output_img = (color[:, :, :-1] * valid_mask +
+#     #               (1 - valid_mask) * input_img)
+
+#     valid_mask = (body_color > 0)
+#     input_img = img
+#     output_img = (body_color * valid_mask + (1-valid_mask)*np.flip(input_img, axis=1)/255.0)  # image is reversed for whatever reason
+
+#     return body_color, body_depth, output_img
+
+    
+
+def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray = None, img: np.ndarray = None, mesh_color=(1.0, 1.0, 0.9, 1.0)):
     """
-    for data in in_data[1]:
-        betas = torch.Tensor(data['betas'])
-        body_pose = torch.Tensor(data['body_pose'])
-        global_orient= torch.Tensor(data['global_orient'])
-        transl=torch.Tensor(data['transl'])
-        out = smplx_neutral(return_joints=True, betas=betas, body_pose=body_pose, global_orient=global_orient, transl=transl)
-        joints = out.joints[:, :25].squeeze()
-        joint_locations.append(joints)
-        vertices.append(out.vertices.detach().cpu().numpy().squeeze())
-
-    vertices = vertices[0]
-    faces = smplx_neutral.faces
-
-    render_mesh_on_image
+    faces: is None then actually renders points for a skeleton - makes point_size=17.0
+    img: background image optional or None otherwise
     """
-    out_mesh = trimesh.Trimesh(vertices, faces, process=False)
-
-    W=1920
-    H=1080
-    r = pyrender.OffscreenRenderer(viewport_width=W,
-                                viewport_height=H,
-                                point_size=1.0)
+  
+    out_mesh = trimesh.Trimesh(vertices, faces, process=False) if faces is not None else \
+        pyrender.Mesh.from_points(vertices, colors=[mesh_color]*len(vertices))
 
 
     # common
-    H, W = 1080, 1920
+    H, W = 1080, 1920  # TODO these better be the same as image shape
+
+    r = pyrender.OffscreenRenderer(viewport_width=W,
+                            viewport_height=H,
+                            point_size=1.0 if faces is not None else 17.0)  # 1.0 too small for skeleton
+
     camera_center = np.array([951.30, 536.77])  # Idk why these, do be quite close to halfway point
     camera_pose = np.eye(4)
     camera_pose = np.array([1.0, -1.0, -1.0, 1.0]).reshape(-1, 1) * camera_pose
@@ -78,12 +123,14 @@ def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarra
         metallicFactor=0.0,
         alphaMode='OPAQUE',
         baseColorFactor=mesh_color)
-    body_mesh = pyrender.Mesh.from_trimesh(
-        out_mesh, material=material)
+    if faces is not None:
+        out_mesh = pyrender.Mesh.from_trimesh(
+            out_mesh, material=material)
 
     ## rendering body
-
-    H, W, _ = img.shape
+    if img is not None:
+        H2, W2, _ = img.shape
+        assert(H2 == H and W2 == W)
 
     scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0],
                         ambient_light=(0.3, 0.3, 0.3))
@@ -92,11 +139,8 @@ def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarra
     # for node in light_nodes:
     #     scene.add_node(node)
 
-    scene.add(body_mesh, 'mesh')
+    scene.add(out_mesh, 'mesh')
 
-    r = pyrender.OffscreenRenderer(viewport_width=W,
-                                viewport_height=H,
-                                point_size=1.0)
     body_color, body_depth = r.render(scene, flags=pyrender.RenderFlags.RGBA)
     body_color = body_color.astype(np.float32)  / 255.0
 
@@ -106,12 +150,13 @@ def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray, img: np.ndarra
     #               (1 - valid_mask) * input_img)
 
     valid_mask = (body_color > 0)
-    input_img = img
+    input_img = img if img is not None else np.zeros(body_color.shape)
     output_img = (body_color * valid_mask + (1-valid_mask)*np.flip(input_img, axis=1)/255.0)  # image is reversed for whatever reason
 
     return body_color, body_depth, output_img
 
-def smplx_and_background_to_video(images: List[np.ndarray], smplx_dicts: List[dict], body_model, output_folder=None, mesh_color=(1.0, 1.0, 0.9, 1.0)):
+def smplx_and_background_to_video(images: List[np.ndarray], smplx_dicts: List[dict],\
+     body_model, output_folder=None, mesh_color=(1.0, 1.0, 0.9, 1.0)):
     num_frames = len(images)
     assert num_frames == len(smplx_dicts)
 
@@ -136,6 +181,14 @@ def smplx_and_background_to_video(images: List[np.ndarray], smplx_dicts: List[di
         outputs.append(output_img)
 
     return outputs
+
+def joint_locs_and_background_to_video(images: List[np.ndarray], joint_locations: List[np.ndarray], translation: np.ndarray,\
+     output_folder=None, mesh_color=(1.0, 1.0, 0.9, 1.0)):
+    num_frames = len(images)
+    assert num_frames == len(joint_locations)
+    joint_locations = joint_locations + translation
+
+
 
 
 LIMBS = [(23, 15),
@@ -186,8 +239,9 @@ def animate_skeleton(skeleton_frames):
 
     mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
     vis = o3d.visualization.Visualizer()
-    vis.create_window()
+    vis.create_window(visible=False)
     vis.add_geometry(mesh_frame)  
+    outputs = []
     for t in range(skeleton_frames.shape[0]):  
         print(t)
         skeleton_input = o3d.geometry.LineSet(
@@ -204,8 +258,9 @@ def animate_skeleton(skeleton_frames):
 
         vis.poll_events()
         vis.update_renderer()
-        time.sleep(0.5)
+        outputs.append(vis.capture_screen_float_buffer())
         vis.remove_geometry(skeleton_input)
+
 
 
 def update_cam(cam_param, trans):
