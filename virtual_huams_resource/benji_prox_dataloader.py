@@ -42,7 +42,8 @@ def get_start_idx(idx, bounds, num_frames):
     start = idx_in_seq * num_frames
     return start, seq_idx
 
-
+# TODO why do these exist?
+# '/PROXD/MPH1Library_00145_01/results/s001_frame_01945__00.01.04.801/000.pkl' example pkl file with massive transl, global_orient
 class DatasetBase(Dataset):
     def __init__(self, root_dir='./', in_frames=10, pred_frames=5, search_prefix='results', extra_prefix='000.pkl', frame_jump=1, window_overlap_factor=2):
         """
@@ -116,7 +117,8 @@ class DatasetBase(Dataset):
         seq_lens = [len(fns_dict) for stem, fns_dict in self.sequences]
         # make sure all the windows fit inside.
         self.bounds = np.array([(seq_len - (self.window_length - self.start_jump)) // self.start_jump for seq_len in seq_lens])  # e.g.
-        assert (np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
+        if not (np.all(self.bounds >= 1)):
+            print("sequence has insufficient frames for one training input")  # sanity check
         self.bounds = np.cumsum(self.bounds)
         return self.bounds[-1]
 
