@@ -5,17 +5,11 @@ from matplotlib import scale
 import numpy as np
 import torch
 from pytorch3d import transforms
-<<<<<<< HEAD
-import numpy as np
-import scipy.ndimage as img_fn
-
-=======
 import pickle
 from pathlib import Path
 import smplx
 import tqdm
 import open3d as o3d
->>>>>>> 101c5b092c3bf88839ee3ff319e7ffbb812e7e2e
 
 def normalize_euler_angles(base_rot_matrix, euler_angles):
     old_rot_matrix = transforms.euler_angles_to_matrix(euler_angles, convention='XYZ')
@@ -61,7 +55,6 @@ def extract_data(data_dict):
     transl = torch.Tensor(data_dict['transl'])
     return betas, body_pose, global_orient, transl
 
-<<<<<<< HEAD
 def l1_inpainting(f, mask, theta=0.001, maxIter=5000):
     u = np.array((1 - mask) * f)
     mask = np.pad(mask, pad_width=1, mode='edge')
@@ -89,7 +82,6 @@ def l1_inpainting(f, mask, theta=0.001, maxIter=5000):
         u = np.copy(u_c[1:-1, 1:-1])
 
     return u
-=======
 
 def get_smplx_body_model(smplx_model_path):
     body_model = smplx.create(smplx_model_path,
@@ -261,4 +253,3 @@ def point_proximity_map(points, joint_locations):
     body_bps = np.min(dist, axis=-1)   # [n_pt]
     
     return body_bps
->>>>>>> 101c5b092c3bf88839ee3ff319e7ffbb812e7e2e
