@@ -217,12 +217,6 @@ def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray = None, img: np
         H2, W2, _ = img.shape
         assert(H2 == H and W2 == W)
 
-    scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0],
-                        ambient_light=(0.3, 0.3, 0.3))
-    scene.add(camera, pose=camera_pose)
-    scene.add(light, pose=camera_pose)
-    # for node in light_nodes:
-    #     scene.add_node(node)
 
     scene.add(out_mesh, 'mesh')
 
