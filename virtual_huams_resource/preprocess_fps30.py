@@ -15,9 +15,9 @@ import copy
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_root', type=str, default='../GTA-1M/FPS-30')
+parser.add_argument('--data_root', type=str, default='/GTA-1M/FPS-30')
 parser.add_argument('--sequence_id', type=str, default='2020-05-20-21-13-13_resize')
-parser.add_argument('--save_root', type=str, default='../GTA-1M/FPS-30/preprocessed_data')
+parser.add_argument('--save_root', type=str, default='/GTA-1M/FPS-30/preprocessed_data')
 
 # output 2D proximity maps and many other things in /GTA-1M/FPS-30/preprocessed_data
 
@@ -216,16 +216,16 @@ if __name__ == '__main__':
                     inpainted_depth_map = l1_inpainting(out_depth,
                                                         depth_mask_human,
                                                         maxIter=depth_inpaint_itr)
-                    plt.imshow(inpainted_depth_map)
+                    # plt.imshow(inpainted_depth_map)
                     # plt.show()
                     # (out_depth > 0): not human or sky
                     inpainted_depth_mask_human = inpainted_depth_map[depth_mask_human] <= np.min(out_depth[out_depth>0])
                     inpainted_depth_mask_human_ratio = np.sum(inpainted_depth_mask_human) / (h*w)
 
-                if inpainted_depth_mask_human_ratio <= 0.001:
-                    inpainted_depth_map = inpainted_depth_map.astype(np.float32)
+                if inpainted_depth_mask_human_ratio <= 0.001:       # if ratio of human is small enough
+                    inpainted_depth_map = inpainted_depth_map.astype(np.float32)        # take as the interpolated inpainted depth map
 
-                    ################### get scene point could of cur_frame_N #####################################
+                    ################### get scene point cloud of cur_frame_N ###################
                     rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
                         o3d.geometry.Image((np.asarray(out_image)*255).astype(np.uint8)),
                         o3d.geometry.Image(np.asarray(inpainted_depth_map.astype(np.float32))),
@@ -241,14 +241,14 @@ if __name__ == '__main__':
                     scene_verts = np.asarray(pcd.points)     # [h*w, 3], coordinate of each pixel in the depth map
                     scene_verts_aug = np.hstack([scene_verts, np.ones([scene_verts.shape[0], 1])])
                     cam_extr_ref = np.linalg.inv(info_npz['world2cam_trans'][cur_frame_N])
-                    scene_verts = scene_verts_aug.dot(cam_extr_ref)[:, :3]
-                    pcd.points = o3d.utility.Vector3dVector(scene_verts)  # world coordinate
+                    scene_verts = scene_verts_aug.dot(cam_extr_ref)[:, :3]      # camera to world transformation
+                    pcd.points = o3d.utility.Vector3dVector(scene_verts) # world coordinate
 
 
-                    if scene_verts.shape[0] == np.sum(inpainted_depth_map > 0):
+                    if scene_verts.shape[0] == np.sum(inpainted_depth_map > 0):     # if all points in the depth map has a corresponding point in the point cloud
                         ######################## save rgb/depth image ##############################
                         print('save data for cur_frame_N = {}'.format(cur_frame_N))
-                        seq_cnt += 1
+                        seq_cnt += 1        # for every cur_frame_N, if 
                         plt.imsave('{}/seq_{:04d}_fr_{:05d}.png'.format(save_depth_img_path, seq_cnt, cur_frame_N), inpainted_depth_map)
                         np.save('{}/seq_{:04d}_fr_{:05d}.npy'.format(save_depth_npy_path, seq_cnt, cur_frame_N), inpainted_depth_map)
 
@@ -258,32 +258,34 @@ if __name__ == '__main__':
                         img_cur_frame_N = cv2.resize(img_cur_frame_N, (w, h), interpolation=cv2.INTER_NEAREST)
 
                         rgb_image = copy.deepcopy(out_image)  # in [0,1]
-                        rgb_image[mask_human_cur_frame_N == True] = img_cur_frame_N[mask_human_cur_frame_N == True] / 255.0
-                        rgb_image[mask_sky_cur_frame_N == True] = img_cur_frame_N[mask_sky_cur_frame_N == True] / 255.0
+                        rgb_image[mask_human_cur_frame_N == True] = img_cur_frame_N[mask_human_cur_frame_N == True] / 255.0 # scaled rgb value for human
+                        rgb_image[mask_sky_cur_frame_N == True] = img_cur_frame_N[mask_sky_cur_frame_N == True] / 255.0 # scaled rgb value for sky
                         plt.imshow(rgb_image)
                         plt.imsave('{}/seq_{:04d}_fr_{:05d}.jpg'.format(save_rgb_path, seq_cnt, cur_frame_N), rgb_image)
 
 
                         ################### calculate body bps feature for all frames #######################
+                        # some params (@Di: no idea why parameters are like this, maybe empirically determined)
                         start = cur_frame_N - fps//5 * 4
                         end = cur_frame_N + fps * 2 + 1
                         step = fps // 5
                         for cur_frame in range(start, end, step):
-                            depth_flat = inpainted_depth_map.reshape(h*w)
-                            depth_mask_ind = np.where(depth_flat == 0)[0]  # index of masked pixel in flattened depth
-                            depth_nomask_ind = np.asarray(list(set(range(h*w))-set(depth_mask_ind)))  # index of kept pixel in flattened depth
-                            depth_mask_sky_ind = ((out_depth == 0) * (mask_human_cur_frame_N==False)).reshape(h*w)
+                            depth_flat = inpainted_depth_map.reshape(h*w)  # inpainted depth map
+                            depth_mask_ind = np.where(depth_flat == 0)[0]  # indices of masked pixels (human or sky)
+                            depth_nomask_ind = np.asarray(list(set(range(h*w))-set(depth_mask_ind)))  # indices of nonmasked pixels
+                            depth_mask_sky_ind = ((out_depth == 0) * (mask_human_cur_frame_N==False)).reshape(h*w)  # indices of sky
 
-                            # ############ distance to 21 joints
+                            # ############ distance to 21 joints ############
                             # nbrs = NearestNeighbors(n_neighbors=1, leaf_size=1, algorithm="ball_tree").fit(body_joints_3d)
                             # neigh_dist, neigh_ind = nbrs.kneighbors(scene_verts)
                             # body_bps = neigh_dist[:, 0]  # distance  [n_bps]  n_bps = h*w-n_human_mask
                             # print('max/min body bps feature value:', np.max(body_bps), np.min(body_bps))
                             # print(np.sum(body_bps))
 
-                            ############ distance to skeleton
+                            ############ distance to skeleton (21 joints)  ############
                             # min distance from each pixel point P to a set of line segments AB
                             body_joints_3d = info_npz['joints_3d_world'][cur_frame]  # [21, 3] world coordinate
+                            # 3D coordinates of the two end points of each limbs
                             A = body_joints_3d[np.asarray(LIMBS)[:, 0]]  # [n_limb, 3]
                             B = body_joints_3d[np.asarray(LIMBS)[:, 1]]  # [n_limb, 3]
                             n_pt = scene_verts.shape[0]
@@ -293,16 +295,17 @@ if __name__ == '__main__':
                             B = np.tile(B, (n_pt, 1)).reshape(n_pt*n_limb, 3)
                             P = np.tile(scene_verts, n_limb).reshape(n_pt*n_limb, 3)
 
+                            # compute distance from P to each limb
                             AB = B - A
                             AP = P - A
                             BP = P - B
                             temp_1 = np.multiply(AB, AP).sum(axis=-1)  # [n_pt, n_limb]
                             temp_2 = np.multiply(-AB, BP).sum(axis=-1)  # [n_pt, n_limb]
-                            mask_1 = np.where(temp_1 <= 0)[0]
-                            mask_2 = np.where((temp_1 > 0) * (temp_2 <= 0))[0]
-                            mask_3 = np.where((temp_1 > 0) * (temp_2 > 0))[0]
+                            mask_1 = np.where(temp_1 <= 0)[0]   # angle between AB and AP >= 90
+                            mask_2 = np.where((temp_1 > 0) * (temp_2 <= 0))[0]  # angle between AB and AP < 90 and angle between BA and BP >= 90
+                            mask_3 = np.where((temp_1 > 0) * (temp_2 > 0))[0]   # angle between AB and AP < 90 and angle between BA and BP < 90
                             if len(mask_1) + len(mask_2) + len(mask_3) != n_pt*n_limb:
-                                print('num of verts does not match! (dist calculation)')
+                                print('[distance calculation] num of verts does not match!')
 
                             dist_1 = np.sqrt(np.sum((P[mask_1]-A[mask_1])**2, axis=-1))  # [n_mask_1]
                             dist_2 = np.sqrt(np.sum((P[mask_2]-B[mask_2])**2, axis=-1))  # [n_mask_2]
@@ -321,7 +324,7 @@ if __name__ == '__main__':
                             # print('max/min body bps feature value:', np.max(body_bps), np.min(body_bps))
 
 
-                            ########### back to image plane, visualize bps feature map
+                            ########### back to image plane, visualize bps feature map ###########
                             # print(cur_frame, cur_frame_N)
                             body_bps_full = np.zeros([h*w])
                             body_bps_full[depth_nomask_ind] = body_bps

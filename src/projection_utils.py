@@ -87,8 +87,9 @@ class Projection():
             stacked = np.column_stack((points, np.ones(len(points)) ))
             points = np.dot(T, stacked.T).T[:, :3]
             points = np.ascontiguousarray(points)
+
         ind = points[:, 2] > TH
-        return {'points':points[ind], 'colors':colors[ind]}
+        return {'points': points[ind], 'colors': colors[ind]}
 
 
     def align_color2depth(self, depth_im, color_im, interpolate=True):

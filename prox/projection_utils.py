@@ -100,7 +100,7 @@ class Projection():
             depth_im_flat[zero_mask] = np.interp(np.flatnonzero(zero_mask), np.flatnonzero(~zero_mask),
                                                  depth_im_flat[~zero_mask])
             depth_im = depth_im_flat.reshape(depth_im.shape)
-
+        
         points = self.unproject_depth_image(depth_im, self.depth_cam).reshape(-1, 3)
         uvs = self.projectPoints(points, self.color_cam)
         uvs = np.round(uvs).astype(int)
@@ -108,6 +108,7 @@ class Projection():
         valid_y = np.logical_and(uvs[:, 0] >= 0, uvs[:, 0] < 1920)
         valid_idx = np.logical_and(valid_x, valid_y)
         uvs = uvs[valid_idx == True]
+
         aligned_color = np.zeros((h_d, w_d, 3)).astype(color_im.dtype)
         aligned_color[valid_idx.reshape(h_d, w_d)] = color_im[uvs[:, 1], uvs[:, 0]]
 
@@ -116,6 +117,7 @@ class Projection():
     def align_depth2color(self, depth_im, depth_raw):
         (w_rgb, h_rgb) = (1920, 1080)
         (w_d, h_d) = (512, 424)
+
         points = self.unproject_depth_image(depth_im, self.depth_cam).reshape(-1, 3)
         uvs = self.projectPoints(points, self.color_cam)
         uvs = np.round(uvs).astype(int)

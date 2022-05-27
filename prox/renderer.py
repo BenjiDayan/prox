@@ -51,7 +51,7 @@ def main(args):
         with open(os.path.join(cam2world_dir,scene_name + '.json'), 'r') as f:
             trans = np.array(json.load(f))
         trans = np.linalg.inv(trans)
-        static_scene.apply_transform(trans)
+        static_scene.apply_transform(trans)     # camera to world transformation
 
         body_scene_rendering_dir = os.path.join(fitting_dir, 'renderings')
         if not osp.exists(body_scene_rendering_dir):

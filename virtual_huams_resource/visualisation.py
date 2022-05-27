@@ -331,8 +331,6 @@ color_input = np.zeros([len(LIMBS), 3])
 color_input[:, 0] = 1.0
 
 def animate_skeleton(skeleton_frames):
-
-        
     trans = np.eye(4)
     trans[:3, :3] = np.array([[0, 0, -1], [-1, 0, 0], [0, -1, 0]])
     rx = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
@@ -416,3 +414,22 @@ def update_cam(cam_param, trans):
 # color = color.astype(np.float32) / 255.0
 # img = pil_img.fromarray((color * 255).astype(np.uint8))
 # # img.save(body_scene_rendering_fn)
+
+# input: scene_dir (directory of the .ply file)
+# input: skeleton (np.array 25 x 3)
+# input: vis (visualizer)
+def visualize_skeleton_in_point_cloud(scene_dir, skeleton):
+    scene_point_cloud_input = o3d.io.read_point_cloud(scene_dir)
+    skeleton_input = o3d.geometry.LineSet(
+            o3d.utility.Vector3dVector(skeleton),
+            o3d.utility.Vector2iVector(LIMBS))
+
+    vis = o3d.visualization.Visualizer()
+    vis.add_geometry(scene_point_cloud_input)
+    vis.add_geometry(skeleton_input)
+    
+    return vis;
+
+# create a Visualizer object and run the following to visualize:
+# vis.run()
+# vis.destroy_window()
