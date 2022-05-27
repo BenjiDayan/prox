@@ -22,6 +22,8 @@ from utils import normalized_joint_locations, proximity_map, get_smplx_body_mode
 
 
 def load(fn):
+    if not fn:  # e.g. fn set to None in dataset alignment
+        return None
     try:
         with open(fn, 'rb') as file:
             return pickle.load(file)
@@ -59,6 +61,13 @@ class DatasetBase(Dataset):
         scenes = glob.glob(str(self.root_dir / '*'))
         scenes = [Path(scene) for scene in scenes]
         scenes_dir = {scene.name: list(map(Path, glob.glob(str(scene / search_prefix / '*')))) for scene in scenes}
+        # for stem, paths in scenes_dir.items():
+        #     verified_paths = []
+        #     for path in paths:
+        #         path = str(path / (extra_prefix if extra_prefix else ''))
+        #         if os.path.exists(path):
+
+
         scenes_dir = {stem: [(str(path / (extra_prefix if extra_prefix else '')), path.name) for path in paths] \
                       for stem, paths in scenes_dir.items()}
         outputs = {}
@@ -190,6 +199,7 @@ class proxDatasetSkeleton(DatasetBase):
 
     def __getitem__(self, idx):
         _in_frames_dicts, in_frames_fns, _pred_frames_dicts, pred_frames_fns = super().__getitem__(idx)
+
 
         in_data, pred_data = map(lambda fns: [load(fn) for fn in fns], [in_frames_fns, pred_frames_fns])
         # In event of failed file read, have arrays of appropriate shape but filled with nans - these training pairs
