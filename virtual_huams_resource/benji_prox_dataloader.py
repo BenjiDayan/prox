@@ -1,4 +1,6 @@
+import math
 import os
+from typing import List
 import cv2
 import torch
 # import pandas as pd
@@ -16,7 +18,7 @@ import pickle
 import smplx
 from projection_utils import Projection
 
-from utils import normalized_joint_locations
+from utils import normalized_joint_locations, proximity_map, get_smplx_body_model
 
 
 def load(fn):
@@ -33,9 +35,25 @@ def nans_of_shape(shape):
     return out
 
 
+def get_start_idx(idx, bounds, num_frames):
+    seq_idx = np.digitize(idx, bounds)
+    assert seq_idx < len(bounds), "idx too big"
+    idx_in_seq = idx - (bounds[seq_idx - 1] if seq_idx > 0 else 0)
+    start = idx_in_seq * num_frames
+    return start, seq_idx
 
+# TODO why do these exist?
+# '/PROXD/MPH1Library_00145_01/results/s001_frame_01945__00.01.04.801/000.pkl' example pkl file with massive transl, global_orient
 class DatasetBase(Dataset):
-    def __init__(self, root_dir='./', in_frames=10, pred_frames=5, search_prefix='results', extra_prefix='000.pkl'):
+    def __init__(self, root_dir='./', in_frames=10, pred_frames=5, search_prefix='results', extra_prefix='000.pkl', frame_jump=1, window_overlap_factor=2):
+        """
+        in_frames: number of frames from which to predict future frames
+        pred_frames: number of future frames to predict
+        frame_jump: difference in frame number. If 1 then sample every frame. If 5 then sample every 5th frame
+  search for our files, which have names like
+            /cluster/scratch/bdayan/prox_data/PROXD/N3OpenArea_00158_01/results/s001_frame_00006__00.00.00.148/000.pkl
+            others are ...s001_frame_00006__00.00.00.148.png hence extra_prefix might be ''
+        """
         self.root_dir = Path(root_dir)
 
         scenes = glob.glob(str(self.root_dir / '*'))
@@ -88,27 +106,27 @@ class DatasetBase(Dataset):
         self.in_frames = in_frames
         self.pred_frames = pred_frames
         self.tot_frames = in_frames + pred_frames
+        self.frame_jump = frame_jump
+        self.window_length = self.tot_frames * self.frame_jump
+        self.window_overlap_factor=window_overlap_factor
+        self.start_jump = math.ceil(self.window_length/self.window_overlap_factor)  # subsequent start indices for each sequence
 
-        seq_lens = [len(fns_dict) for stem, fns_dict in sequences]
-        self.bounds = np.array([seq_len // self.tot_frames for seq_len in seq_lens])  # e.g.
-        assert (np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
-        self.bounds = np.cumsum(self.bounds)
+        length = len(self)  # initialise self.bounds
 
     def __len__(self):
         seq_lens = [len(fns_dict) for stem, fns_dict in self.sequences]
-        self.bounds = np.array([seq_len // self.tot_frames for seq_len in seq_lens])  # e.g.
-        assert (np.all(self.bounds >= 1)), "sequence has insufficient frames for one training input"  # sanity check
+        # make sure all the windows fit inside.
+        self.bounds = np.array([(seq_len - (self.window_length - self.start_jump)) // self.start_jump for seq_len in seq_lens])  # e.g.
+        if not (np.all(self.bounds >= 1)):
+            print("sequence has insufficient frames for one training input")  # sanity check
         self.bounds = np.cumsum(self.bounds)
         return self.bounds[-1]
 
     def __getitem__(self, idx):
-        seq_idx = np.digitize(idx, self.bounds)
-        assert seq_idx < len(self.bounds), "idx too big"
-        idx_in_seq = idx - (self.bounds[seq_idx - 1] if seq_idx > 0 else 0)
-        start = idx_in_seq * self.tot_frames
+        start, seq_idx = get_start_idx(idx, self.bounds, self.start_jump)
 
-        in_frames_dicts = self.sequences[seq_idx][1][start:start + self.in_frames:1]
-        pred_frames_dicts = self.sequences[seq_idx][1][start + self.in_frames:start + self.tot_frames:1]
+        in_frames_dicts = self.sequences[seq_idx][1][start:start + self.in_frames*self.frame_jump:self.frame_jump]
+        pred_frames_dicts = self.sequences[seq_idx][1][start + self.in_frames*self.frame_jump:start + self.tot_frames*self.frame_jump:self.frame_jump]
         in_frames_fns = [frame_dict['fn'] for frame_dict in in_frames_dicts]
         pred_frames_fns = [frame_dict['fn'] for frame_dict in pred_frames_dicts]
 
@@ -166,25 +184,7 @@ class proxDatasetSkeleton(DatasetBase):
 
         # we need a body model to convert beta, theta and global translation into 3D joint locations.
         if output_type == 'joint_locations':
-            # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-            body_model = smplx.create(smplx_model_path,
-                                      model_type='smplx',  ## smpl, smpl+h, or smplx?
-                                      gender='neutral', ext='npz',  ## file format
-                                      num_pca_comps=12,  ## MANO hand pose pca component
-                                      create_global_orient=True,
-                                      create_body_pose=True,
-                                      create_betas=True,
-                                      create_left_hand_pose=True,
-                                      create_right_hand_pose=True,
-                                      create_expression=True,
-                                      create_jaw_pose=True,
-                                      create_leye_pose=True,
-                                      create_reye_pose=True,
-                                      create_transl=True,
-                                      batch_size=1  ## how many bodies in a batch?
-                                      )
-            body_model.eval()
-            self.body_model = body_model
+            self.body_model = get_smplx_body_model(smplx_model_path)
 
         self.output_type = output_type
 
@@ -196,12 +196,16 @@ class proxDatasetSkeleton(DatasetBase):
         # will be filtered out by our defined collate_fn in batching.
         if None in in_data or None in pred_data:
             # in_skels, pred_skels = nans_of_shape((self.in_frames, 21, 3)), nans_of_shape((self.pred_frames, 21, 3))
-            in_skels, pred_skels = None, None
+            return (idx, None, None)
         elif self.output_type == 'joint_thetas':  # .reshape(-1, 21, 3)
-            in_skels, pred_skels = map(
-                lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21,
-                                                                                                              3),
-                [in_data, pred_data])
+            try:
+                in_skels, pred_skels = map(
+                    lambda datas: torch.stack([torch.Tensor(data['body_pose']) for data in datas], dim=0).reshape(-1, 21,
+                                                                                                                3),
+                    [in_data, pred_data])
+            except Exception as e:
+                print(f'exception: {e}, args: {e.args}')
+                return (idx, None, None)
         elif self.output_type == 'joint_locations':
             try:
                 in_joint_locations, pred_joint_locations = normalized_joint_locations(in_data, pred_data, self.body_model)
@@ -210,7 +214,8 @@ class proxDatasetSkeleton(DatasetBase):
                 print(f'idx was: {idx}')
                 print(f'in_data, pred_data: {in_data}, {pred_data}')
                 print(f'{in_frames_fns}, {pred_frames_fns}')
-                raise e
+                # raise e
+                return (idx, None, None)
 
         if self.output_type == 'raw_pkls':
             return (idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
@@ -219,30 +224,53 @@ class proxDatasetSkeleton(DatasetBase):
         elif self.output_type == 'joint_locations':
             return (idx, in_joint_locations, pred_joint_locations)
 
-        return (idx, in_skels, pred_skels) if not self.verbose else (
-        idx, (in_frames_fns, in_data), (pred_frames_fns, pred_data))
 
 
 proxDatasetJoints = proxDatasetSkeleton  # backwards compatibility
 
 class proxDatasetProximityMap(Dataset):
-    def __init__(self, fittings_dir, depth_dir, calibration_dir):
-        self.skelDataset = proxDatasetSkeleton(root_dir=fittings_dir, output_type='raw_pkls', in_frames=1, pred_frames=0)
+    def __init__(self, fittings_dir, depth_dir, calibration_dir, smplx_model_path=None, in_frames=10, pred_frames=5):
+        self.in_frames, self.pred_frames = in_frames, pred_frames
+        self.skelDataset = proxDatasetSkeleton(root_dir=fittings_dir, output_type='raw_pkls', in_frames=in_frames, pred_frames=pred_frames)
         depth_dir = Path(depth_dir)
-        self.depthDataset = DatasetBase(root_dir=depth_dir, search_prefix='Depth', extra_prefix='', in_frames=1, pred_frames=0)
+        self.depthDataset = DatasetBase(root_dir=depth_dir, search_prefix='Depth', extra_prefix='', in_frames=in_frames, pred_frames=pred_frames)
         self.proj = Projection(calib_dir=calibration_dir)
+
+        self.skelDataset.align(self.depthDataset)
+        self.depthDataset.align(self.skelDataset)
+
+        self.body_model = get_smplx_body_model(smplx_model_path)
+        
 
     def __len__(self):
         return len(self.depthDataset)
+
+
+    def depth_and_skel_data_to_proximity_map(self, depth_fns: List[str], skel_datas: List[dict]):
+        depth_imgs = frame_fns_to_images(depth_fns)
+        proximity_map_data = []
+        for depth_map, skel_dict in zip(depth_imgs, skel_datas):
+            try:
+                proximity_map_data.append(proximity_map(depth_map, skel_dict, self.body_model, self.proj.depth_cam, self.proj.color_cam)[-1])
+            except Exception as e:
+                print(e, e.args)
+                proximity_map_data.append(None)
+        
+        return proximity_map_data
+
     def __getitem__(self, idx):
-        in_frames_dicts, in_frames_fns_img, _, _ = self.depthDataset.__getitem__(idx)
-        depth_img = [cv2.imread(fn, flags=-1).astype(float) for fn in in_frames_fns_img][0]
-        depth_img = cv2.flip(depth_img, 1)
+        in_frames_dicts, in_frames_fns, pred_frames_dicts, pred_frames_fns = self.depthDataset.__getitem__(idx)
+        (idx, (in_skels_fns, in_data), (pred_skels_fns, pred_data)) = self.skelDataset.__getitem__(idx)
 
-        (idx, (in_frames_fns_skel, in_data), (pred_frames_fns, pred_data)) = self.skelDataset.__getitem__(idx)
-        skeleton_dict = in_data[0]
-        return in_frames_fns_img[0], in_frames_fns_skel[0], depth_img, skeleton_dict
+        in_prox_maps, pred_prox_maps = self.depth_and_skel_data_to_proximity_map(in_frames_fns, in_data), self.depth_and_skel_data_to_proximity_map(pred_frames_fns, pred_data)
 
+        return in_prox_maps, pred_prox_maps
+        
+
+
+def frame_fns_to_images(fns: List[str]):
+    imgs = [cv2.imread(fn, flags=-1).astype(float) for fn in fns]
+    return [cv2.flip(img, 1) for img in imgs]
 
 
 class proxDatasetImages(Dataset):
@@ -283,4 +311,9 @@ def my_collate(batch):
             not torch.any(torch.isnan(triple[1]))) and (not torch.any(torch.isnan(triple[2]))),
         batch
     ))
-    return default_collate(batch)
+    try:
+        return default_collate(batch)
+    except Exception as e:
+        print(f'batch: {[(triple[0], triple[1].shape, triple[2].shape) for triple in batch]}')
+        print(e, e.args)
+        raise e

@@ -5,11 +5,25 @@ from matplotlib import scale
 import numpy as np
 import torch
 from pytorch3d import transforms
+import scipy.ndimage as img_fn
+
 import pickle
 from pathlib import Path
 import smplx
 import tqdm
 import open3d as o3d
+
+# 30 fps. We want to have input 5 seconds and predict 10 seconds. So maybe sample 3 fps, 15 input frames and 30 prediction frames.
+def get_fps(things, offset=5, samples=50):
+    """things is a list of dictionaries describing files with a 'tstamp' key of datetime.time value type.
+    Sample evenly adjacent tstamp differences to get fps.
+    Seems about 30. Ofc could have not done i+1 - i but ahhhhh."""
+    import datetime
+    samples = np.arange(offset, len(things)-2, len(things)//samples)
+    deltas = [(things[i]['tstamp'], things[i+1]['tstamp']) for i in samples]
+    deltas = [datetime.datetime.combine(datetime.date.today(), b) - datetime.datetime.combine(datetime.date.today(), a) for a, b in deltas]
+    return list(map(lambda x: x.total_seconds(), deltas))
+
 
 def normalize_euler_angles(base_rot_matrix, euler_angles):
     old_rot_matrix = transforms.euler_angles_to_matrix(euler_angles, convention='XYZ')
@@ -25,7 +39,8 @@ def get_joint_locations(data_dict, body_model):
 
 
 # TODO body_model is used here without definition - pass around with global or as param?
-def normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_model):
+def normalized_joint_locations1(data_dict, base_rot_matrix=torch.eye(3).unsqueeze(0), base_transl=torch.zeros(3), body_model=None):
+    """normalises wrt rotation and translation. body_model shouldn't be None I'm just lazy."""
     betas, body_pose, euler_angles, transl = extract_data(data_dict)
     transl = transl - base_transl
     euler_angles = normalize_euler_angles(base_rot_matrix, euler_angles)
@@ -37,8 +52,10 @@ def normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_mo
 
 def normalized_joint_locations(in_data_dicts, pred_data_dicts, body_model):
     # TODO rotation normalisation only makes sense about the vector which aligns with gravity, or maybe not at all?
+    #  for now we take it out
     _betas, _body_pose, base_euler_angles, base_transl = extract_data(in_data_dicts[-1])
     base_rot_matrix = transforms.euler_angles_to_matrix(base_euler_angles, convention='XYZ')
+    base_rot_matrix=torch.eye(3).reshape((1, 3, 3))
 
     in_joint_locations = torch.cat(
         [normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_model) for data_dict in in_data_dicts], dim=0)
@@ -46,6 +63,55 @@ def normalized_joint_locations(in_data_dicts, pred_data_dicts, body_model):
         [normalized_joint_locations1(data_dict, base_rot_matrix, base_transl, body_model) for data_dict in pred_data_dicts], dim=0)
 
     return in_joint_locations, pred_joint_locations
+
+
+
+def normalized_joint_locations_world(in_data_dict: dict, body_model, cam2world: torch.tensor):
+    """Converts joint locations of our smplx data dict into world coordinate system.
+    In a sequence you'd want to further translation normalise wrt to the first skeleton pelvis position.
+    Then to reverse you'd reverse translate and then inverse world2cam.
+    """
+    joint_locs = data_dict_to_joint_locs(in_data_dict, body_model)  # 1, 25, 3
+    
+    cam_R = cam2world[:3, :3].reshape([3, 3])
+    cam_t = cam2world[:3, 3].reshape([1, 3])
+    joint_locs = torch.matmul(cam_R, joint_locs.permute(0, 2, 1)).permute(0, 2, 1) + cam_t
+
+    return joint_locs
+
+
+def data_dict_to_joint_locs(in_data_dict, body_model):
+    betas, body_pose, global_orient, transl = extract_data(in_data_dict)
+    out = body_model(return_joints=True, betas=betas, body_pose=body_pose, global_orient=global_orient, transl=transl)
+    joint_locs = out.joints[:, :25]  # 1, 25, 3
+    return joint_locs
+
+def cam2world_conv(joint_locs: torch.Tensor, cam2world: torch.Tensor):
+    """joint_locs: ? x n x 3 or n x 3 I think
+    cam2world: 4x4 R and t matrix"""
+    if len(joint_locs.shape) == 2:
+        joint_locs = joint_locs.unsqueeze(0)
+    if len(joint_locs.shape) != 3:
+        raise Exception('shape should be length 2 or 3')
+
+    cam_R = cam2world[:3, :3].reshape([3, 3])
+    cam_t = cam2world[:3, 3].reshape([1, 3])
+    joint_locs = torch.matmul(cam_R, joint_locs.permute(0, 2, 1)).permute(0, 2, 1) + cam_t
+    return joint_locs
+
+def world2cam_conv(joint_locs: torch.Tensor, cam2world: torch.tensor):
+    """joint_locs: ? x n x 3 or n x 3 I think
+    cam2world: 4x4 R and t matrix"""
+    if len(joint_locs.shape) == 2:
+        joint_locs = joint_locs.unsqueeze(0)
+    if len(joint_locs.shape) != 3:
+        raise Exception('shape should be length 2 or 3')
+
+    cam_R = cam2world[:3, :3].reshape([3, 3])
+    cam_t = cam2world[:3, 3].reshape([1, 3])
+    joint_locs = torch.matmul(torch.inverse(cam_R), (joint_locs - cam_t).permute(0, 2, 1)).permute(0, 2, 1)
+    return joint_locs
+
 
 
 def extract_data(data_dict):
