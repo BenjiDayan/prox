@@ -338,7 +338,7 @@ def animate_skeleton(skeleton_frames):
     mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
     vis = o3d.visualization.Visualizer()
     vis.create_window(visible=False)
-    vis.add_geometry(mesh_frame)  
+    vis.add_geometry(mesh_frame)
     outputs = []
     for t in range(skeleton_frames.shape[0]):  
         print(t)
@@ -411,7 +411,6 @@ def update_cam(cam_param, trans):
 
 # input: scene_dir (directory of the .ply file)
 # input: skeleton (np.array 25 x 3)
-# input: vis (visualizer)
 def visualize_skeleton_in_point_cloud(scene_dir, skeleton):
     scene_point_cloud_input = o3d.io.read_point_cloud(scene_dir)
     skeleton_input = o3d.geometry.LineSet(
@@ -423,7 +422,47 @@ def visualize_skeleton_in_point_cloud(scene_dir, skeleton):
     vis.add_geometry(skeleton_input)
     
     return vis;
-
 # create a Visualizer object and run the following to visualize:
 # vis.run()
 # vis.destroy_window()
+
+# input: scene_dir (directory of the .ply file)
+# input: skeleton_list (list of tensors of size 1 x 25 x 3)
+def visualize_skeleton_sequences_in_point_cloud(scene_dir, skeleton_list):
+    skeleton_iter = iter(skeleton_list)
+    # update function for callback
+    def update(vis):
+        skeleton = next(skeleton_iter)          # render first frame
+        skeleton = skeleton.detach().numpy()
+        skeleton = skeleton.astype(np.float64)
+        skeleton = skeleton.squeeze()
+        # print(skeleton)
+        skeleton_input = o3d.geometry.LineSet(
+                o3d.utility.Vector3dVector(skeleton),
+                o3d.utility.Vector2iVector(LIMBS))
+        ctrl = vis.get_view_control()
+        cam_param = ctrl.convert_to_pinhole_camera_parameters()
+        vis.clear_geometries()
+        vis.add_geometry(scene_point_cloud)
+        vis.add_geometry(skeleton_input)
+        ctrl.convert_from_pinhole_camera_parameters(cam_param)
+        vis.poll_events()
+        vis.update_renderer()
+        vis.run()
+
+    scene_point_cloud = o3d.io.read_point_cloud(scene_dir)
+    vis = o3d.visualization.VisualizerWithKeyCallback()
+    vis.register_key_callback(65, update)       # press A
+    vis.add_geometry(scene_point_cloud)
+
+    skeleton = skeleton_list[0].detach().numpy()          # render first frame
+    skeleton = skeleton.astype(np.float64)
+    skeleton = skeleton.squeeze()
+    skeleton_input = o3d.geometry.LineSet(
+                o3d.utility.Vector3dVector(skeleton),
+                o3d.utility.Vector2iVector(LIMBS))
+    vis.add_geometry(skeleton_input)
+    vis.run()
+    
+    return ;
+# run the function and press 'A' to proceed to the next frame
