@@ -154,13 +154,13 @@ def skels_and_background_to_video(in_skels: torch.Tensor, pred_skels: torch.Tens
     point_size=15.0
     output_images = []
     for skel, img in zip(in_skels, images[:len(in_skels)]):
-        mesh = points_to_mesh(skel.detach().numpy(), gt_skels_color)
+        mesh = points_to_mesh(skel.cpu().detach().numpy(), gt_skels_color)
         body_color, body_depth, out_img = render_meshes_on_image(meshes=[mesh], img=img, point_size=point_size)
         output_images.append(out_img)
 
     for (pred_skel, fut_skel), img in zip(zip(pred_skels, fut_skels), images[len(in_skels):]):
-        pred_mesh = points_to_mesh(pred_skel.detach().numpy(), pred_skels_color)
-        fut_mesh = points_to_mesh(fut_skel.detach().numpy(), gt_skels_color)
+        pred_mesh = points_to_mesh(pred_skel.cpu().detach().numpy(), pred_skels_color)
+        fut_mesh = points_to_mesh(fut_skel.cpu().detach().numpy(), gt_skels_color)
         body_color, body_depth, out_img = render_meshes_on_image(meshes=[pred_mesh, fut_mesh], img=img, point_size=point_size)
         output_images.append(out_img)
 
@@ -179,6 +179,32 @@ def predict_and_visualise(gru: PoseGRU_inputFC2, in_skels_world: torch.Tensor, f
     pred_skels_world = pred_skels_world + pelvis
     pred_skels_world = pred_skels_world.squeeze()  # (30, 25, 3)
     
+    in_skels, pred_skels, fut_skels = map(
+        lambda skels_world: world2cam_conv(skels_world, cam2world),
+        [in_skels_world, pred_skels_world, fut_skels_world]
+    )
+
+    output_images = skels_and_background_to_video(in_skels, pred_skels, fut_skels, images)
+    return output_images
+
+
+def predict_and_visualise_transformer(transformer, in_skels_world: torch.Tensor, fut_skels_world: torch.Tensor,
+                          images: List[np.array], cam2world):
+    """predict skeletons with model. Transform all skels from world to rgb space. plot camera rgb frames with skeleton joint point clouds
+    rendered on top for each frame (green points for ground truth and red for predicted joints)
+
+    all skeleton tensors of shape ? x 25 x 3 e.g. 15 x 25 x 3 and 30 x 25 x 3 (in vs fut)"""
+
+    pelvis = in_skels_world[0, 0, :]
+    in_skels_world_norm = in_skels_world - pelvis
+    fut_skels_world_norm = fut_skels_world - pelvis
+    in_skels_world_norm = torch.flatten(in_skels_world_norm.unsqueeze(0), start_dim=2)
+    fut_skels_world_norm = torch.flatten(fut_skels_world_norm.unsqueeze(0), start_dim=2)
+    tgt_mask = transformer.get_tgt_mask(fut_skels_world_norm.shape[1]).to(in_skels_world.device)
+    pred_skels_world = transformer(in_skels_world_norm, fut_skels_world_norm, tgt_mask=tgt_mask).squeeze(0).reshape(-1, 25, 3)
+    pred_skels_world = pred_skels_world + pelvis
+    pred_skels_world = pred_skels_world.squeeze()  # (30, 25, 3)
+
     in_skels, pred_skels, fut_skels = map(
         lambda skels_world: world2cam_conv(skels_world, cam2world),
         [in_skels_world, pred_skels_world, fut_skels_world]
@@ -325,6 +351,8 @@ color_input = np.zeros([len(LIMBS), 3])
 color_input[:, 0] = 1.0
 
 def animate_skeleton(skeleton_frames):
+
+        
     trans = np.eye(4)
     trans[:3, :3] = np.array([[0, 0, -1], [-1, 0, 0], [0, -1, 0]])
     rx = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
@@ -408,6 +436,7 @@ def update_cam(cam_param, trans):
 # color = color.astype(np.float32) / 255.0
 # img = pil_img.fromarray((color * 255).astype(np.uint8))
 # # img.save(body_scene_rendering_fn)
+<<<<<<< HEAD
 
 # input: scene_dir (directory of the .ply file)
 # input: skeleton (np.array 25 x 3)
@@ -466,3 +495,5 @@ def visualize_skeleton_sequences_in_point_cloud(scene_dir, skeleton_list):
     
     return ;
 # run the function and press 'A' to proceed to the next frame
+=======
+>>>>>>> e95b26f480cbe2c036ab2248ed14c979042d72fe
