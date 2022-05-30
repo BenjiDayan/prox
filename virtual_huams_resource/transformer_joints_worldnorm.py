@@ -38,7 +38,7 @@ print(f'cuda availability: {torch.cuda.is_available()}')
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f'device: {device}')
 
-name = "Transformer_joints_15_30_3fps_27_05_2248"
+name = "Transformer_joints_15_30_3fps_30_05_1613"
 
 import wandb
 _ = wandb.init(settings=wandb.Settings(), project="transformer_viz", entity="vh-motion-pred", name=name)
@@ -52,9 +52,9 @@ batch_size = 15
 in_frames = 15
 pred_frames = 30
 frame_jump = 10
-window_overlap_factor = 8
+window_overlap_factor = 450
 lr = 0.0001
-n_iter = 500
+n_iter = 200
 save_every = 40
 num_workers = 0
 max_loss = 10000  # This is dangerous but stops ridiculous updates?
@@ -70,12 +70,12 @@ save_path.format(epoch=3, batchnum=5)
 val_areas = ['BasementSittingBooth', 'N3OpenArea']
 
 pd_train = proxDatasetSkeleton(root_dir='../data_train/PROXD/', in_frames=in_frames, pred_frames=pred_frames, \
-                         output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=frame_jump,
-                         window_overlap_factor=window_overlap_factor, extra_prefix='joints_worldnorm.pkl')
+                         output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=10,
+                         window_overlap_factor=150, extra_prefix='joints_worldnorm.pkl')
 
 pd_valid = proxDatasetSkeleton(root_dir='../data_valid/PROXD/', in_frames=in_frames, pred_frames=pred_frames, \
-                             output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=frame_jump,
-                             window_overlap_factor=window_overlap_factor, extra_prefix='joints_worldnorm.pkl')
+                             output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=10,
+                             window_overlap_factor=8, extra_prefix='joints_worldnorm.pkl')
 
 
 pd_train.sequences = [seq for seq in pd_train.sequences if not any([area in seq[0] for area in val_areas])]
@@ -122,7 +122,6 @@ dataloader_train = DataLoader(pd_train, batch_size=batch_size,
 
 dataloader_valid = DataLoader(pd_valid, batch_size=batch_size,
                               shuffle=True, num_workers=0, collate_fn=my_collate2)
-
 criterion = nn.MSELoss()
 
 model = PoseTransformer(num_tokens=25*3).to(device)
@@ -159,19 +158,18 @@ for epoch in range(n_iter):
     losses_rep_valid = []
     for i, (idx, in_skels, fut_skels) in (pbar := tqdm.tqdm(enumerate(dataloader_train), total=len(dataloader_train))):
         in_skels = in_skels.to(device)
-        in_skels_cpy = in_skels.clone()
-        # print(f'in_skels device: {in_skels.device}')
         fut_skels = fut_skels.to(device)
 
         pelvis = in_skels[:, 0, 0, :].unsqueeze(1).unsqueeze(1)
-        # in_skels = in_skels - pelvis
-        in_skels_shape = in_skels.shape
-        in_skels = in_skels.reshape(in_skels_shape[0], in_skels_shape[1], in_skels_shape[2] * in_skels_shape[3])
-        # fut_skels = fut_skels - pelvis
-        fut_skels_shape = fut_skels.shape
-        fut_skels = fut_skels.reshape(fut_skels_shape[0], fut_skels_shape[1], fut_skels_shape[2] * fut_skels_shape[3])
+        in_skels = in_skels - pelvis
+        in_skels_cpy = in_skels.clone()
+        in_skels = torch.flatten(in_skels, start_dim=2)
 
-        tgt_mask = model.get_tgt_mask(fut_skels_shape[1]).to(device)
+        fut_skels = fut_skels - pelvis
+        fut_skels = torch.flatten(fut_skels, start_dim=2)
+        tgt = torch.cat((in_skels[:, -1, :].unsqueeze(1), fut_skels[:, :-1, :]), dim=1)
+
+        tgt_mask = model.get_tgt_mask(fut_skels.shape[1]).to(device)
 
         optimizer.zero_grad()
 
@@ -179,7 +177,7 @@ for epoch in range(n_iter):
         batch_len = fut_skels.shape[0]
         # print(f'batch_len: {batch_len}')  # maybe something's wrong but I do get about avg 13 batchlen not 15 :( crummy files?
 
-        pred_skels = model(in_skels, fut_skels, tgt_mask=tgt_mask)
+        pred_skels = model(in_skels, tgt, tgt_mask=tgt_mask)
 
         loss = criterion(pred_skels, fut_skels)
         loss.backward()
@@ -283,25 +281,23 @@ for epoch in range(n_iter):
         for i, (idx, in_skels, fut_skels) in (
         pbar := tqdm.tqdm(enumerate(dataloader_valid), total=len(dataloader_valid))):
             in_skels = in_skels.to(device)
-            in_skels_cpy = in_skels.clone()
-            # print(f'in_skels device: {in_skels.device}')
             fut_skels = fut_skels.to(device)
 
             pelvis = in_skels[:, 0, 0, :].unsqueeze(1).unsqueeze(1)
             in_skels = in_skels - pelvis
-            in_skels_shape = in_skels.shape
-            in_skels = in_skels.reshape(in_skels_shape[0], in_skels_shape[1], in_skels_shape[2] * in_skels_shape[3])
-            fut_skels = fut_skels - pelvis
-            fut_skels_shape = fut_skels.shape
-            fut_skels = fut_skels.reshape(fut_skels_shape[0], fut_skels_shape[1],
-                                          fut_skels_shape[2] * fut_skels_shape[3])
+            in_skels_cpy = in_skels.clone()
+            in_skels = torch.flatten(in_skels, start_dim=2)
 
-            tgt_mask = model.get_tgt_mask(fut_skels_shape[1]).to(device)
+            fut_skels = fut_skels - pelvis
+            fut_skels = torch.flatten(fut_skels, start_dim=2)
+            tgt = torch.cat((in_skels[:, -1, :].unsqueeze(1), fut_skels[:, :-1, :]), dim=1)
+
+            tgt_mask = model.get_tgt_mask(fut_skels.shape[1]).to(device)
             pred_frames = fut_skels.shape[1]
             batch_len = fut_skels.shape[0]
             # print(f'batch_len: {batch_len}')  # maybe something's wrong but I do get about avg 13 batchlen not 15 :( crummy files?
 
-            pred_skels = model(in_skels, fut_skels, tgt_mask=tgt_mask)
+            pred_skels = model(in_skels, tgt, tgt_mask=tgt_mask)
 
             loss = criterion(pred_skels, fut_skels)
 
