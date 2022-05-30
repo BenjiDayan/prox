@@ -436,7 +436,6 @@ def update_cam(cam_param, trans):
 # color = color.astype(np.float32) / 255.0
 # img = pil_img.fromarray((color * 255).astype(np.uint8))
 # # img.save(body_scene_rendering_fn)
-<<<<<<< HEAD
 
 # input: scene_dir (directory of the .ply file)
 # input: skeleton (np.array 25 x 3)
@@ -462,9 +461,9 @@ def visualize_skeleton_sequences_in_point_cloud(scene_dir, skeleton_list):
     # update function for callback
     def update(vis):
         skeleton = next(skeleton_iter)          # render first frame
-        skeleton = skeleton.detach().numpy()
-        skeleton = skeleton.astype(np.float64)
-        skeleton = skeleton.squeeze()
+        # skeleton = skeleton.detach().numpy()
+        # skeleton = skeleton.astype(np.float64)
+        # skeleton = skeleton.squeeze()
         # print(skeleton)
         skeleton_input = o3d.geometry.LineSet(
                 o3d.utility.Vector3dVector(skeleton),
@@ -484,9 +483,10 @@ def visualize_skeleton_sequences_in_point_cloud(scene_dir, skeleton_list):
     vis.register_key_callback(65, update)       # press A
     vis.add_geometry(scene_point_cloud)
 
-    skeleton = skeleton_list[0].detach().numpy()          # render first frame
-    skeleton = skeleton.astype(np.float64)
-    skeleton = skeleton.squeeze()
+    skeleton = skeleton_list[0]
+    # skeleton = skeleton_list[0].detach().numpy()          # render first frame
+    # skeleton = skeleton.astype(np.float64)
+    # skeleton = skeleton.squeeze()
     skeleton_input = o3d.geometry.LineSet(
                 o3d.utility.Vector3dVector(skeleton),
                 o3d.utility.Vector2iVector(LIMBS))
@@ -495,5 +495,3 @@ def visualize_skeleton_sequences_in_point_cloud(scene_dir, skeleton_list):
     
     return ;
 # run the function and press 'A' to proceed to the next frame
-=======
->>>>>>> e95b26f480cbe2c036ab2248ed14c979042d72fe
