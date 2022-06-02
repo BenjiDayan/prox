@@ -92,15 +92,15 @@ class PoseGRU_inputFC2(nn.Module):
         output = output.view((bs,) + self.input_size)
         return cur_state, output  # gru state [bs, hidden_size], output [bs, 3, 21]
 
-    def forward_prediction(self, input, pred_len):
-        # input: pose3d [bs, in_seq_len, 21, 3]
-        in_seq_len = input.shape[1]
+    def forward_prediction(self, in_seq: torch.Tensor, out_seq_len):
+        # in_seq: pose3d [bs, in_seq_len, 21, 3]
+        in_seq_len = in_seq.shape[1]
         predictions = []
-        for time_idx in range(in_seq_len + pred_len-1):
+        for time_idx in range(in_seq_len + out_seq_len-1):
             if time_idx == 0:
-                cur_state, output = self.forward(input[:, time_idx])
+                cur_state, output = self.forward(in_seq[:, time_idx])
             if time_idx < in_seq_len:
-                cur_state, output = self.forward(input[:, time_idx], hidden=cur_state)
+                cur_state, output = self.forward(in_seq[:, time_idx], hidden=cur_state)
             else:
                 cur_state, output = self.forward(output, hidden=cur_state)
 
@@ -109,7 +109,28 @@ class PoseGRU_inputFC2(nn.Module):
 
         pred_skels = torch.cat([tens.view((1,) + tens.shape) for tens in predictions])
         pred_skels = pred_skels.transpose(0, 1)
-        
+
+        return cur_state, pred_skels
+
+    def forward_prediction_guided(self, in_seq, out_seq):
+        # input: pose3d [bs, in_seq_len, 21, 3]
+        in_seq_len = in_seq.shape[1]
+        out_seq_len = out_seq.shape[1]
+        predictions = []
+        for time_idx in range(in_seq_len + out_seq_len - 1):
+            if time_idx == 0:
+                cur_state, output = self.forward(in_seq[:, time_idx])
+            if time_idx < in_seq_len:
+                cur_state, output = self.forward(in_seq[:, time_idx], hidden=cur_state)
+            else:
+                cur_state, output = self.forward(out_seq[:, time_idx-in_seq_len], hidden=cur_state)
+
+            if time_idx >= in_seq_len - 1:
+                predictions.append(output)
+
+        pred_skels = torch.cat([tens.view((1,) + tens.shape) for tens in predictions])
+        pred_skels = pred_skels.transpose(0, 1)
+
         return cur_state, pred_skels
 
 # class PoseGRU_inputFC3(nn.Module):

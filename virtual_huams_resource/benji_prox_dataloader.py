@@ -238,12 +238,11 @@ class proxDatasetSkeleton(DatasetBase):
 
 proxDatasetJoints = proxDatasetSkeleton  # backwards compatibility
 
-class proxDatasetProximityMap(Dataset):
-    def __init__(self, fittings_dir, depth_dir, calibration_dir, smplx_model_path=None, in_frames=10, pred_frames=5):
-        self.in_frames, self.pred_frames = in_frames, pred_frames
-        self.skelDataset = proxDatasetSkeleton(root_dir=fittings_dir, output_type='raw_pkls', in_frames=in_frames, pred_frames=pred_frames)
+class proxDatasetProximityMap(DatasetBase):
+    def __init__(self, fittings_dir, depth_dir, calibration_dir, smplx_model_path=None, **kwargs):
+        self.skelDataset = proxDatasetSkeleton(root_dir=fittings_dir, output_type='raw_pkls', **kwargs)
         depth_dir = Path(depth_dir)
-        self.depthDataset = DatasetBase(root_dir=depth_dir, search_prefix='Depth', extra_prefix='', in_frames=in_frames, pred_frames=pred_frames)
+        self.depthDataset = DatasetBase(root_dir=depth_dir, search_prefix='Depth', extra_prefix='', **kwargs)
         self.proj = Projection(calib_dir=calibration_dir)
 
         self.skelDataset.align(self.depthDataset)
@@ -272,8 +271,10 @@ class proxDatasetProximityMap(Dataset):
         in_frames_dicts, in_frames_fns, pred_frames_dicts, pred_frames_fns = self.depthDataset.__getitem__(idx)
         (idx, (in_skels_fns, in_data), (pred_skels_fns, pred_data)) = self.skelDataset.__getitem__(idx)
 
-        in_prox_maps, pred_prox_maps = self.depth_and_skel_data_to_proximity_map(in_frames_fns, in_data), self.depth_and_skel_data_to_proximity_map(pred_frames_fns, pred_data)
-
+        try:
+            in_prox_maps, pred_prox_maps = self.depth_and_skel_data_to_proximity_map(in_frames_fns, in_data), self.depth_and_skel_data_to_proximity_map(pred_frames_fns, pred_data)
+        except Exception as e:
+            return None, None
         return in_prox_maps, pred_prox_maps
         
 

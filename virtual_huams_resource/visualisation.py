@@ -167,7 +167,7 @@ def skels_and_background_to_video(in_skels: torch.Tensor, pred_skels: torch.Tens
     return output_images
 
 
-def predict_and_visualise(gru: PoseGRU_inputFC2, in_skels_world: torch.Tensor, fut_skels_world: torch.Tensor, images: List[np.array], cam2world):
+def predict_and_visualise(gru: PoseGRU_inputFC2, in_skels_world: torch.Tensor, fut_skels_world: torch.Tensor, images: List[np.array], cam2world, guided=True):
     """predict skeletons with model. Transform all skels from world to rgb space. plot camera rgb frames with skeleton joint point clouds
     rendered on top for each frame (green points for ground truth and red for predicted joints)
     
@@ -175,7 +175,12 @@ def predict_and_visualise(gru: PoseGRU_inputFC2, in_skels_world: torch.Tensor, f
 
     pelvis = in_skels_world[0, 0, :]
     in_skels_world_norm = in_skels_world - pelvis
-    cur_state, pred_skels_world = gru.forward_prediction(in_skels_world_norm.unsqueeze(0), pred_len=30)
+    fut_skels_world_norm = fut_skels_world - pelvis
+
+    if guided:
+        cur_state, pred_skels_world = gru.forward_prediction_guided(in_skels_world_norm.unsqueeze(0),fut_skels_world_norm.unsqueeze(0))
+    else:
+        cur_state, pred_skels_world = gru.forward_prediction(in_skels_world_norm.unsqueeze(0), out_seq_len=len(fut_skels_world))
     pred_skels_world = pred_skels_world + pelvis
     pred_skels_world = pred_skels_world.squeeze()  # (30, 25, 3)
     
@@ -189,11 +194,13 @@ def predict_and_visualise(gru: PoseGRU_inputFC2, in_skels_world: torch.Tensor, f
 
 
 def predict_and_visualise_transformer(transformer, in_skels_world: torch.Tensor, fut_skels_world: torch.Tensor,
-                          images: List[np.array], cam2world):
+                          images: List[np.array], cam2world, guided=True):
     """predict skeletons with model. Transform all skels from world to rgb space. plot camera rgb frames with skeleton joint point clouds
     rendered on top for each frame (green points for ground truth and red for predicted joints)
 
-    all skeleton tensors of shape ? x 25 x 3 e.g. 15 x 25 x 3 and 30 x 25 x 3 (in vs fut)"""
+    all skeleton tensors of shape ? x 25 x 3 e.g. 15 x 25 x 3 and 30 x 25 x 3 (in vs fut)
+
+    """
 
     pelvis = in_skels_world[0, 0, :]
     in_skels_world_norm = in_skels_world - pelvis
@@ -201,7 +208,13 @@ def predict_and_visualise_transformer(transformer, in_skels_world: torch.Tensor,
     in_skels_world_norm = torch.flatten(in_skels_world_norm.unsqueeze(0), start_dim=2)
     fut_skels_world_norm = torch.flatten(fut_skels_world_norm.unsqueeze(0), start_dim=2)
     tgt_mask = transformer.get_tgt_mask(fut_skels_world_norm.shape[1]).to(in_skels_world.device)
-    pred_skels_world = transformer(in_skels_world_norm, fut_skels_world_norm, tgt_mask=tgt_mask).squeeze(0).reshape(-1, 25, 3)
+
+    if guided:
+        pred_skels_world = transformer(in_skels_world_norm, fut_skels_world_norm, tgt_mask=tgt_mask).squeeze(0).reshape(-1, 25, 3)
+    else:
+        pred_skels_world = transformer.forward_predict(in_skels_world_norm, pred_frames=fut_skels_world.shape[0]).squeeze(0).reshape(
+            -1, 25, 3)
+
     pred_skels_world = pred_skels_world + pelvis
     pred_skels_world = pred_skels_world.squeeze()  # (30, 25, 3)
 
@@ -213,6 +226,23 @@ def predict_and_visualise_transformer(transformer, in_skels_world: torch.Tensor,
     output_images = skels_and_background_to_video(in_skels, pred_skels, fut_skels, images)
     return output_images
 
+def predict_and_visualise_transformer_unguided(transformer, in_skels_world: torch.Tensor, fut_skels_world: torch.Tensor,
+                          images: List[np.array], cam2world, pred_frames=30):
+    pelvis = in_skels_world[0, 0, :]
+    in_skels_world_norm = in_skels_world - pelvis
+
+    in_skels_world_norm = torch.flatten(in_skels_world_norm.unsqueeze(0), start_dim=2)
+
+    pred_skels_world = transformer.forward_predict(in_skels_world_norm, pred_frames=pred_frames).squeeze(0).reshape(-1, 25, 3)
+    pred_skels_world = pred_skels_world + pelvis
+    pred_skels_world = pred_skels_world.squeeze()  # (30, 25, 3)
+
+    in_skels, pred_skels, fut_skels = map(
+        lambda skels_world: world2cam_conv(skels_world, cam2world),
+        [in_skels_world, pred_skels_world, fut_skels_world]
+    )
+    output_images = skels_and_background_to_video(in_skels, pred_skels, fut_skels, images)
+    return output_images
 
 # TODO deprecate this function apart from when viewing smplx model hmmm
 def render_mesh_on_image(vertices: np.ndarray, faces: np.ndarray = None, img: np.ndarray = None, mesh_color=(1.0, 1.0, 0.9, 1.0), point_size=1.0):

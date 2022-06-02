@@ -86,6 +86,37 @@ class PoseTransformer(nn.Module):
         # [False, False, False, True, True, True]
         return (matrix == pad_token)
 
+    def forward_predict(self, src, pred_frames: int, device=None):
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        src_enc = self.fc2(self.fc1(src)) * math.sqrt(self.dim_model)
+        src_enc = self.positional_encoder(src_enc)
+        src_enc = src_enc.permute(1, 0, 2)
+
+        last_out = None
+        outputs = []
+        for i in range(pred_frames):
+            if i == 0:
+                tgt = src[:, -1, :].unsqueeze(1)  # (batch_size, 1, dim_model)
+            else:
+                tgt = torch.cat([tgt, last_out], dim=1)
+
+            tgt_mask = self.get_tgt_mask(i+1).to(device)
+            tgt_enc = self.fc2(self.fc1(tgt)) * math.sqrt(self.dim_model)
+            tgt_enc = tgt_enc.permute(1, 0, 2)
+
+            # Transformer blocks - Out size = (sequence length, batch_size, num_tokens)
+            transformer_out = self.transformer(src_enc, tgt_enc, tgt_mask=tgt_mask, src_key_padding_mask=None,
+                                               tgt_key_padding_mask=None)
+            out = self.out2(self.out1(transformer_out))
+
+            last_out = out.permute(1, 0, 2)[:, -1:, :]
+            outputs.append(last_out)
+
+        return torch.cat(outputs, dim=1)
+
+
     def forward(self, src, tgt, tgt_mask=None, src_pad_mask=None, tgt_pad_mask=None):
         # Src size must be (batch_size, src sequence length)
         # Tgt size must be (batch_size, tgt sequence length)
