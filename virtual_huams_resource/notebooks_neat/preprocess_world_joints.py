@@ -24,32 +24,12 @@ InteractiveShell.ast_node_interactivity = "all"
 import sys
 sys.path.append('../')
 sys.path.append('../../src')
+# print(sys.path)
+# print(os.getcwd())
 
 from pose_gru import PoseGRU_inputFC2
 from benji_prox_dataloader import *
 from utils import normalized_joint_locations_world # for data manipulation
-
-
-
-
-root_dir = "/cluster/scratch/bdayan/prox_data"
-smplx_model_path='/cluster/home/bdayan/prox/prox/models_smplx_v1_1/models/'
-
-batch_size = 15
-in_frames=15
-pred_frames=30
-frame_jump=5
-window_overlap_factor=5
-lr=0.0001
-n_iter = 10
-save_every=40
-max_loss = 5. # This is dangerous but stops ridiculous updates? 
-
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-pd = proxDatasetJoints(root_dir=root_dir + '/PROXD', in_frames=in_frames, pred_frames=pred_frames, \
-                       output_type='joint_locations', smplx_model_path=smplx_model_path, frame_jump=frame_jump, window_overlap_factor=window_overlap_factor)
 
 
 
@@ -68,36 +48,60 @@ def get_joints(fn, body_model, cam2world):
 
 
 
-for seq in pd.sequences:
-    print(seq[0])
-    try:
-        area_name = seq[0][:seq[0].index('_')]
-        with open(root_dir + '/cam2world/' + area_name + '.json') as file:
-            cam2world = np.array(json.load(file))
-            cam2world = torch.from_numpy(cam2world).float().to(device)
+if __name__ == '__main__':
+    root_dir = "/cluster/scratch/bdayan/prox_data/PROXD"
+    smplx_model_path='/cluster/home/bdayan/prox/prox/models_smplx_v1_1/models/'
+    root_dir = "D:/prox_data/PROXD_attempt2"
+    smplx_model_path='../../models_smplx_v1_1/models/'
 
-    except Exception as e:
-        print(e, e.args)
+    batch_size = 15
+    in_frames=15
+    pred_frames=30
+    frame_jump=5
+    window_overlap_factor=5
+    lr=0.0001
+    n_iter = 10
+    save_every=40
+    max_loss = 5. # This is dangerous but stops ridiculous updates? 
+
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    pd = proxDatasetJoints(root_dir=root_dir + '/PROXD', in_frames=in_frames, pred_frames=pred_frames, \
+                        output_type='joint_locations', smplx_model_path=smplx_model_path, frame_jump=frame_jump, window_overlap_factor=window_overlap_factor)
+
+
+
+    for seq in pd.sequences:
         print(seq[0])
-        continue
-
-    for fn_dict in tqdm.tqdm(seq[1], total=len(seq)):
         try:
-            fn = fn_dict['fn']
+            area_name = seq[0][:seq[0].index('_')]
+            with open(root_dir + '/../cam2world/' + area_name + '.json') as file:
+                cam2world = np.array(json.load(file))
+                cam2world = torch.from_numpy(cam2world).float().to(device)
+
         except Exception as e:
             print(e, e.args)
-            print(fn_dict)
+            print(seq[0])
             continue
 
-        fn = Path(fn)
-        new_fn = str(fn.parent / 'joints_worldnorm.pkl')
+        for fn_dict in tqdm.tqdm(seq[1], total=len(seq)):
+            try:
+                fn = fn_dict['fn']
+            except Exception as e:
+                print(e, e.args)
+                print(fn_dict)
+                continue
 
-        try:
-            joints = get_joints(fn, pd.body_model, cam2world)
-        except Exception as e:
-            print(e, e.args)
-            joints = None
-        
-        with open(new_fn, 'wb') as file:
-            pickle.dump(joints, file)
-        
+            fn = Path(fn)
+            new_fn = str(fn.parent / 'joints_worldnorm.pkl')
+
+            try:
+                joints = get_joints(fn, pd.body_model, cam2world)
+            except Exception as e:
+                print(e, e.args)
+                joints = None
+            
+            with open(new_fn, 'wb') as file:
+                pickle.dump(joints, file)
+            
