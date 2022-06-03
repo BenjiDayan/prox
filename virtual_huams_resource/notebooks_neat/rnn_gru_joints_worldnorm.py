@@ -37,7 +37,7 @@ print(f'cuda availability: {torch.cuda.is_available()}')
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f'device: {device}')
 
-# name = "GRU_joints_5_10_dual_5fps_2layers512__02_06_1147"
+name = "GRU_joints_5_10_dual_5fps_2layers512__02_06_1208"
 
 root_dir = "/cluster/scratch/bdayan/prox_data"
 smplx_model_path='/cluster/home/bdayan/prox/prox/models_smplx_v1_1/models/'
@@ -47,11 +47,11 @@ smplx_model_path='/cluster/home/bdayan/prox/prox/models_smplx_v1_1/models/'
 
 
 batch_size = 15
-in_frames=15
-pred_frames=30
+in_frames=5
+pred_frames=10
 # pred_frames_val=30
 frame_jump=6
-window_overlap_factor=50
+window_overlap_factor=30
 lr=0.00001
 n_layers=2
 n_iter = 600
@@ -191,8 +191,13 @@ for epoch in range(n_iter):
         pred_frames = fut_skels.shape[1]
         batch_len = fut_skels.shape[0]
 
-        cur_state, pred_skels = gru.forward_prediction_guided(in_skels, fut_skels)
-        loss = criterion(pred_skels, fut_skels)
+        cur_state, pred_skels = gru.forward_prediction(in_skels, pred_frames, all=True)
+        loss_guided = criterion(in_skels[:, 1:], pred_skels[:, :in_frames-1])
+        # TODO pred_skels actually doesn't bother computing its final frame as this wouldn't be used - should probably refactor this
+        loss_unguided = criterion(fut_skels, pred_skels[:, in_frames-1:])
+        loss = loss_guided + loss_unguided
+
+        # loss = criterion(pred_skels, fut_skels)
         loss.backward()
 
         optimizer.step() 
@@ -281,9 +286,16 @@ for epoch in range(n_iter):
         pred_frames = fut_skels.shape[1]
         batch_len = fut_skels.shape[0]
         
-        cur_state, pred_skels = gru.forward_prediction_guided(in_skels, fut_skels)
+        # cur_state, pred_skels = gru.forward_prediction_guided(in_skels, fut_skels)
         
-        loss = criterion(pred_skels, fut_skels)
+        # loss = criterion(pred_skels, fut_skels)
+
+        cur_state, pred_skels = gru.forward_prediction(in_skels, pred_frames, all=True)
+        loss_guided = criterion(in_skels[:, 1:], pred_skels[:, :in_frames-1])
+        # TODO pred_skels actually doesn't bother computing its final frame as this wouldn't be used - should probably refactor this
+        loss_unguided = criterion(fut_skels, pred_skels[:, in_frames-1:])
+        loss = loss_guided + loss_unguided
+
 
         rep_pred = in_skels[:, -1, :, :]
         a = rep_pred.detach().cpu().numpy()

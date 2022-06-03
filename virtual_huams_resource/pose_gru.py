@@ -92,7 +92,7 @@ class PoseGRU_inputFC2(nn.Module):
         output = output.view((bs,) + self.input_size)
         return cur_state, output  # gru state [bs, hidden_size], output [bs, 3, 21]
 
-    def forward_prediction(self, in_seq: torch.Tensor, out_seq_len):
+    def forward_prediction(self, in_seq: torch.Tensor, out_seq_len, all=False):
         # in_seq: pose3d [bs, in_seq_len, 21, 3]
         in_seq_len = in_seq.shape[1]
         predictions = []
@@ -104,7 +104,9 @@ class PoseGRU_inputFC2(nn.Module):
             else:
                 cur_state, output = self.forward(output, hidden=cur_state)
 
-            if time_idx >= in_seq_len - 1:
+            if not all and time_idx >= in_seq_len - 1:
+                predictions.append(output)
+            else:
                 predictions.append(output)
 
         pred_skels = torch.cat([tens.view((1,) + tens.shape) for tens in predictions])
