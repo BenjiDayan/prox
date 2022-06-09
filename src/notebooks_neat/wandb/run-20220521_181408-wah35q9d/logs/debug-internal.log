@@ -1,0 +1,78 @@
+2022-05-21 18:14:10,426 INFO    MainThread:86379 [internal.py:wandb_internal():90] W&B internal server running at pid: 86379, started at: 2022-05-21 18:14:10.425563
+2022-05-21 18:14:10,428 INFO    WriterThread:86379 [datastore.py:open_for_write():75] open: /cluster/home/bdayan/prox/prox/virtual_huams_resource/notebooks_neat/wandb/run-20220521_181408-wah35q9d/run-wah35q9d.wandb
+2022-05-21 18:14:10,433 DEBUG   SenderThread:86379 [sender.py:send():232] send: header
+2022-05-21 18:14:10,433 DEBUG   SenderThread:86379 [sender.py:send():232] send: run
+2022-05-21 18:14:10,644 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: check_version
+2022-05-21 18:14:10,649 INFO    SenderThread:86379 [dir_watcher.py:__init__():197] watching files in: /cluster/home/bdayan/prox/prox/virtual_huams_resource/notebooks_neat/wandb/run-20220521_181408-wah35q9d/files
+2022-05-21 18:14:10,650 INFO    SenderThread:86379 [sender.py:_start_run_threads():811] run started: wah35q9d with start time 1653149648
+2022-05-21 18:14:10,650 DEBUG   SenderThread:86379 [sender.py:send():232] send: summary
+2022-05-21 18:14:10,651 INFO    SenderThread:86379 [sender.py:_save_file():948] saving file wandb-summary.json with policy end
+2022-05-21 18:14:10,651 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: check_version
+2022-05-21 18:14:10,778 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: run_start
+2022-05-21 18:14:11,653 INFO    Thread-7  :86379 [dir_watcher.py:_on_file_created():244] file/dir created: /cluster/home/bdayan/prox/prox/virtual_huams_resource/notebooks_neat/wandb/run-20220521_181408-wah35q9d/files/wandb-summary.json
+2022-05-21 18:14:13,876 DEBUG   HandlerThread:86379 [meta.py:__init__():35] meta init
+2022-05-21 18:14:13,876 DEBUG   HandlerThread:86379 [meta.py:__init__():49] meta init done
+2022-05-21 18:14:13,876 DEBUG   HandlerThread:86379 [meta.py:probe():209] probe
+2022-05-21 18:14:13,896 DEBUG   HandlerThread:86379 [meta.py:_setup_git():199] setup git
+2022-05-21 18:14:14,016 DEBUG   HandlerThread:86379 [meta.py:_setup_git():206] setup git done
+2022-05-21 18:14:14,016 DEBUG   HandlerThread:86379 [meta.py:_save_pip():53] save pip
+2022-05-21 18:14:14,018 DEBUG   HandlerThread:86379 [meta.py:_save_pip():67] save pip done
+2022-05-21 18:14:14,018 DEBUG   HandlerThread:86379 [meta.py:probe():247] probe done
+2022-05-21 18:14:14,025 DEBUG   SenderThread:86379 [sender.py:send():232] send: files
+2022-05-21 18:14:14,025 INFO    SenderThread:86379 [sender.py:_save_file():948] saving file wandb-metadata.json with policy now
+2022-05-21 18:14:14,039 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:14:14,040 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:14:14,048 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: pause
+2022-05-21 18:14:14,049 INFO    HandlerThread:86379 [handler.py:handle_request_pause():695] stopping system metrics thread
+2022-05-21 18:14:14,253 DEBUG   SenderThread:86379 [sender.py:send():232] send: telemetry
+2022-05-21 18:14:14,254 DEBUG   SenderThread:86379 [sender.py:send():232] send: stats
+2022-05-21 18:14:14,660 INFO    Thread-7  :86379 [dir_watcher.py:_on_file_created():244] file/dir created: /cluster/home/bdayan/prox/prox/virtual_huams_resource/notebooks_neat/wandb/run-20220521_181408-wah35q9d/files/requirements.txt
+2022-05-21 18:14:14,661 INFO    Thread-7  :86379 [dir_watcher.py:_on_file_created():244] file/dir created: /cluster/home/bdayan/prox/prox/virtual_huams_resource/notebooks_neat/wandb/run-20220521_181408-wah35q9d/files/output.log
+2022-05-21 18:14:14,661 INFO    Thread-7  :86379 [dir_watcher.py:_on_file_created():244] file/dir created: /cluster/home/bdayan/prox/prox/virtual_huams_resource/notebooks_neat/wandb/run-20220521_181408-wah35q9d/files/wandb-metadata.json
+2022-05-21 18:14:14,683 INFO    Thread-11 :86379 [upload_job.py:push():132] Uploaded file /scratch/219276696.tmpdir/tmp9g58meurwandb/9by7q77l-wandb-metadata.json
+2022-05-21 18:14:29,256 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:14:29,256 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:14:40,681 INFO    Thread-7  :86379 [dir_watcher.py:_on_file_modified():257] file/dir modified: /cluster/home/bdayan/prox/prox/virtual_huams_resource/notebooks_neat/wandb/run-20220521_181408-wah35q9d/files/config.yaml
+2022-05-21 18:14:44,467 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:14:44,468 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:14:59,676 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:14:59,677 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:15:15,076 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:15:15,077 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:15:30,287 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:15:30,288 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:15:45,497 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:15:45,498 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:16:00,707 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:16:00,708 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:16:15,916 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:16:15,917 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:16:31,125 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:16:31,126 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:16:46,337 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:16:46,338 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:17:01,556 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:17:01,557 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:17:16,771 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:17:16,772 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:17:30,806 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: resume
+2022-05-21 18:17:30,806 INFO    HandlerThread:86379 [handler.py:handle_request_resume():686] starting system metrics thread
+2022-05-21 18:17:30,809 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: pause
+2022-05-21 18:17:30,809 INFO    HandlerThread:86379 [handler.py:handle_request_pause():695] stopping system metrics thread
+2022-05-21 18:17:30,912 DEBUG   SenderThread:86379 [sender.py:send():232] send: stats
+2022-05-21 18:17:31,982 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:17:31,982 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:17:42,898 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: resume
+2022-05-21 18:17:42,899 INFO    HandlerThread:86379 [handler.py:handle_request_resume():686] starting system metrics thread
+2022-05-21 18:17:47,220 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:17:47,221 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:17:48,278 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: pause
+2022-05-21 18:17:48,278 INFO    HandlerThread:86379 [handler.py:handle_request_pause():695] stopping system metrics thread
+2022-05-21 18:17:48,325 DEBUG   SenderThread:86379 [sender.py:send():232] send: stats
+2022-05-21 18:18:02,445 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:18:02,445 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:18:17,652 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:18:17,653 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:18:32,875 DEBUG   HandlerThread:86379 [handler.py:handle_request():141] handle_request: stop_status
+2022-05-21 18:18:32,876 DEBUG   SenderThread:86379 [sender.py:send_request():246] send_request: stop_status
+2022-05-21 18:18:38,529 WARNING MainThread:86379 [internal.py:wandb_internal():153] Internal process interrupt: 1
