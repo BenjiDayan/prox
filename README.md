@@ -1,6 +1,7 @@
 ## Human Motion prediction with Scene Context
 
 We sought to train a human motion predictor, taking a time sequence of a 25 joint skeleton and predicting future joint locations.
+See [final_report.pdf](./final_report.pdf) for our full writeup.
 
 ## PROX dataset
 We used the [PROX datastet](https://prox.is.tue.mpg.de/) for training and validation. We originally wished to incorporate proximity maps as model inputs. These would provide scene context to inform better predictions (e.g. rolling around on a bed, sliding an arm across a table, leaning against a wall). But we ran out of time to adapt/train a joint model.
@@ -29,7 +30,7 @@ On Euler cluster we used a virtual environment with loaded modules:
 ## Results
 We show some qualitative results on our validation set, which contains 9 videos in 2 scenes: N3OpenArea and BasementSittingBooth. We input 5 frames of 1 second in video and predict 10 frames of 2 seconds. The green skeleton is the ground truth and the red one is the prediction.
 ### RNN
-RNN does not perform very well. Our history of model training was messy and ignorant. This is the best we achieved on a short time frame prediction, though we also tried to predict longer sequences which is harder.
+RNN does not perform amazingly. Our history of model training was messy and ignorant. This is the best we achieved on a short time frame prediction, though we also tried to predict longer sequences which is harder. It does at least beat naive replication of final frames!
 
 Predicted Lying human to sit up
 ![PROX Examples](./gifs/sit_up.gif)
