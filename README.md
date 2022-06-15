@@ -48,7 +48,7 @@ Some more examples from PROX dataset RGB camera point of view
 ![PROX Examples](./gifs/2D_wallpoint.gif)
 
 ### Transformer
-The transformer model is able to predict natural human paths and shapes, but is unable to follow the trajectories accurately.
+The transformer model is able to predict natural human movement trajectories and shapes, but is unable to follow the trajectories accurately.
 <img src="./gifs/seq_30_transformer.gif" width="800"/>
 <img src="./gifs/seq_95_transformer.gif" width="800"/>
 <img src="./gifs/seq_130_transformer.gif" width="800"/>
