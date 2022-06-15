@@ -27,9 +27,9 @@ On Euler cluster we used a virtual environment with loaded modules:
 `gcc/6.3.0 python_gpu/3.8.5 cuda/10.2.89 mesa/18.3.6 open3d/0.9.0 eth_proxy`
 
 ## Results
-We show some qualitative results on our validation set, which contains 9 videos in 2 scenes: N3OpenArea and BasementSittingBooth.
+We show some qualitative results on our validation set, which contains 9 videos in 2 scenes: N3OpenArea and BasementSittingBooth. We input 5 frames of 1 second in video and predict 10 frames of 2 seconds. The green skeleton is the ground truth and the red one is the prediction.
 ### RNN
-On a 2 second motion prediction from 1 second of input joint locations with an RNN. Not very good motion prediction unfortunately, our history of model training was messy and ignorant. This is the best we achieved on a short time frame prediction, though we also tried to predict longer sequences which is harder.
+RNN does not perform very well. Our history of model training was messy and ignorant. This is the best we achieved on a short time frame prediction, though we also tried to predict longer sequences which is harder.
 
 Predicted Lying human to sit up
 ![PROX Examples](./gifs/sit_up.gif)
