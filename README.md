@@ -74,7 +74,7 @@ gru = PoseGRU_inputFC2(input_size=(25,3), n_layers=3)
 restore_dict = torch.load(save_path, map_location=device)
 gru.load_state_dict(restore_dict['model_state_dict'])
 ```
-For transformer model, load [model.pt] to perform the same task.
+You can download the pretrained transformer model [here](https://drive.google.com/file/d/1TLP7NbMIP5cm-ejMQZvVaalZ0gzB37iS/view?ts=62aa2a18), and load it as:
 ```python
 from simple_transformer import PoseTransformer
 transformer = PoseTransformer(num_tokens=25*3)
