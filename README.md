@@ -65,15 +65,23 @@ Here's a gif of what a time sequence of proximity maps looks like:
 ![prox_map.gif](./gifs/prox_map.gif)
 
 ## Training models
-Standalone scripts [rnn_gru_joints_worldnorm.py](./src/notebooks_neat/rnn_gru_joints_worldnorm.py) and [transformer_joints_worldnorm.py](./src/notebooks_neat/transformer_joints_worldnorm.py).
+Standalone scripts [rnn_gru_joints_worldnorm.py](./src/notebooks_neat/rnn_gru_joints_worldnorm.py) and [transformer_joints_worldnorm.py](./src/transformer_joints_worldnorm.py).
 
-You can load with `pytorch` the best trained short 2 second prediction model at [model.pt](./src/notebooks_neat/GRU_joints_5_10_dual_5fps_2layers512__07_06_1053_epoch77_bn1577.pt)
+For RNN model, you can load with `pytorch` the best trained short 2 second prediction model at [model.pt](./src/notebooks_neat/GRU_joints_5_10_dual_5fps_2layers512__07_06_1053_epoch77_bn1577.pt)
 ```python
 from pose_gru import PoseGRU_inputFC2
 gru = PoseGRU_inputFC2(input_size=(25,3), n_layers=3)
 restore_dict = torch.load(save_path, map_location=device)
 gru.load_state_dict(restore_dict['model_state_dict'])
 ```
+For transformer model, load [model.pt] to perform the same task.
+```python
+from simple_transformer import PoseTransformer
+transformer = PoseTransformer(num_tokens=25*3)
+restore_dict = torch.load(save_path, map_location=device)
+transformer.load_state_dict(restore_dict['model_state_dict'])
+```
+
 
 ## Acknowledgments
 
