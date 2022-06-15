@@ -1,6 +1,7 @@
 import os
 
 import numpy as np  # for data manipulation
+from torch.utils.data import DataLoader
 
 np.random.seed(0)
 import math  # to help with data reshaping of the data
@@ -12,36 +13,26 @@ import json
 torch.manual_seed(0)
 
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
 from simple_transformer import PoseTransformer
 
 import tqdm
-import matplotlib.pyplot as plt
-import logging
-from visualisation import predict_and_visualise_transformer
-
-# from IPython.core.interactiveshell import InteractiveShell
-# InteractiveShell.ast_node_interactivity = "all"
-
 
 import sys
 
 sys.path.append('../')
 sys.path.append('../../src')
 
-from pose_gru import PoseGRU_inputFC2
 from benji_prox_dataloader import *
 
 print(f'cuda availability: {torch.cuda.is_available()}')
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f'device: {device}')
 
-name = "Transformer_joints_15_30_3fps_30_05_1613"
+name = "Transformer_joints_5_10_5fps_15_06_1318"
 
-import wandb
-_ = wandb.init(settings=wandb.Settings(), project="transformer_viz", entity="vh-motion-pred", name=name)
+# import wandb
+# _ = wandb.init(settings=wandb.Settings(), project="transformer_new", entity="vh-motion-pred", name=name)
 
 
 # root_dir = "../data_new/"
@@ -49,10 +40,10 @@ smplx_model_path = 'C:\\Users\\xiyi\\projects\\semester_project\\smplify-x\\smpl
 viz_folder = '../viz_prox_validation/'
 
 batch_size = 15
-in_frames = 15
-pred_frames = 30
-frame_jump = 10
-window_overlap_factor = 450
+in_frames = 5
+pred_frames = 10
+frame_jump = 6
+window_overlap_factor = 30
 lr = 0.0001
 n_iter = 200
 save_every = 40
@@ -70,24 +61,25 @@ save_path.format(epoch=3, batchnum=5)
 val_areas = ['BasementSittingBooth', 'N3OpenArea']
 
 pd_train = proxDatasetSkeleton(root_dir='../data_train/PROXD/', in_frames=in_frames, pred_frames=pred_frames, \
-                         output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=10,
-                         window_overlap_factor=150, extra_prefix='joints_worldnorm.pkl')
+                         output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=6,
+                         window_overlap_factor=45, extra_prefix='joints_worldnorm.pkl')
+
 
 pd_valid = proxDatasetSkeleton(root_dir='../data_valid/PROXD/', in_frames=in_frames, pred_frames=pred_frames, \
-                             output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=10,
+                             output_type='raw_pkls', smplx_model_path=smplx_model_path, frame_jump=6,
                              window_overlap_factor=8, extra_prefix='joints_worldnorm.pkl')
 
 
 pd_train.sequences = [seq for seq in pd_train.sequences if not any([area in seq[0] for area in val_areas])]
 pd_valid.sequences = [seq for seq in pd_valid.sequences if any([area in seq[0] for area in val_areas])]
 
-pdc = DatasetBase(root_dir='../data_train/recordings/', in_frames=in_frames, pred_frames=pred_frames,
+
+pdc = DatasetBase(root_dir='../data_valid/recordings/', in_frames=in_frames, pred_frames=pred_frames,
                   search_prefix='Color', extra_prefix='', frame_jump=frame_jump,
-                  window_overlap_factor=window_overlap_factor)
+                  window_overlap_factor=8)
 
 pdc.align(pd_valid)
 pd_valid.align(pdc)
-
 
 
 def my_collate2(batch):
@@ -122,6 +114,18 @@ dataloader_train = DataLoader(pd_train, batch_size=batch_size,
 
 dataloader_valid = DataLoader(pd_valid, batch_size=batch_size,
                               shuffle=True, num_workers=0, collate_fn=my_collate2)
+in_skels_all = []
+fut_skels_all = []
+for i, (idx, in_skels, fut_skels) in (pbar := tqdm.tqdm(enumerate(dataloader_train), total=len(dataloader_train))):
+    in_skels_all.append(torch.flatten(in_skels, start_dim=2))
+    fut_skels_all.append(torch.flatten(fut_skels, start_dim=2))
+in_skels_all = torch.cat(in_skels_all)
+fut_skels_all = torch.cat(fut_skels_all)
+mean_in_skels_all = in_skels_all.mean(dim=0).unsqueeze(0).detach().clone().to(device)
+std_in_skels_all = in_skels_all.std(dim=0).unsqueeze(0).detach().clone().to(device)
+mean_fut_skels_all = fut_skels_all.mean(dim=0).unsqueeze(0).detach().clone().to(device)
+std_fut_skels_all = fut_skels_all.std(dim=0).unsqueeze(0).detach().clone().to(device)
+
 criterion = nn.MSELoss()
 
 model = PoseTransformer(num_tokens=25*3).to(device)
@@ -152,37 +156,56 @@ idx_counter = 0
 last_fn = None
 for epoch in range(n_iter):
     losses = []
+    losses_full_pred = []
     losses_rep = []
 
     losses_valid = []
     losses_rep_valid = []
     for i, (idx, in_skels, fut_skels) in (pbar := tqdm.tqdm(enumerate(dataloader_train), total=len(dataloader_train))):
         in_skels = in_skels.to(device)
+        in_skels_cpy = in_skels.clone()
         fut_skels = fut_skels.to(device)
 
-        pelvis = in_skels[:, 0, 0, :].unsqueeze(1).unsqueeze(1)
-        in_skels = in_skels - pelvis
-        in_skels_cpy = in_skels.clone()
         in_skels = torch.flatten(in_skels, start_dim=2)
-
-        fut_skels = fut_skels - pelvis
         fut_skels = torch.flatten(fut_skels, start_dim=2)
-        tgt = torch.cat((in_skels[:, -1, :].unsqueeze(1), fut_skels[:, :-1, :]), dim=1)
+        # print(in_skels.shape, fut_skels.shape)
 
-        tgt_mask = model.get_tgt_mask(fut_skels.shape[1]).to(device)
+        in_skels_norm = (in_skels - mean_in_skels_all) / std_in_skels_all
+        fut_skels_norm = (fut_skels - mean_fut_skels_all) / std_fut_skels_all
+
+        pelvis = in_skels_norm[:, 0, :].unsqueeze(1).detach().clone()
+        in_skels_norm = in_skels_norm - pelvis
+
+        fut_skels_norm = fut_skels_norm - pelvis
+        tgt = torch.cat((in_skels_norm[:, -1, :].unsqueeze(1), fut_skels_norm[:, :-1, :]), dim=1)
+
+        tgt_mask = model.get_tgt_mask(fut_skels_norm.shape[1]).to(device)
 
         optimizer.zero_grad()
 
-        pred_frames = fut_skels.shape[1]
-        batch_len = fut_skels.shape[0]
-        # print(f'batch_len: {batch_len}')  # maybe something's wrong but I do get about avg 13 batchlen not 15 :( crummy files?
+        pred_frames = fut_skels_norm.shape[1]
+        batch_len = fut_skels_norm.shape[0]
 
-        pred_skels = model(in_skels, tgt, tgt_mask=tgt_mask)
+        pred_skels_norm = model(in_skels_norm, tgt, tgt_mask=tgt_mask)
+        pred_skels = ((pred_skels_norm + pelvis) * std_fut_skels_all) + mean_fut_skels_all
 
         loss = criterion(pred_skels, fut_skels)
+
         loss.backward()
         if loss.item() < max_loss:
             optimizer.step()
+
+        with torch.no_grad():
+            tgt = in_skels_norm[:, -1, :].unsqueeze(1)
+
+            for i in range(fut_skels_norm.shape[1]):
+                tgt_mask = model.get_tgt_mask(tgt.size(1)).to(device)
+                pred = model(in_skels_norm, tgt, tgt_mask)
+                tgt = torch.cat((tgt, pred[:, -1, :].unsqueeze(1)), dim=1)
+            pred_skels_norm = tgt[:, 1:, :]
+            pred_skels = ((pred_skels_norm + pelvis) * std_fut_skels_all) + mean_fut_skels_all
+
+            losses_full_pred.append(criterion(pred_skels, fut_skels).item())
 
         rep_pred = in_skels_cpy[:, -1, :, :]
         a = rep_pred.detach().cpu().numpy()
@@ -200,7 +223,7 @@ for epoch in range(n_iter):
         # wandb.log({'MSEloss': loss, 'rep_pred_MSEloss': loss_rep})
 
         pbar.set_description(
-            f"avg last 20 loss: {np.mean(list(filter(lambda x: x < max_loss, losses[-20:]))):.4f} ")
+            f"avg last 20 loss: {np.mean(list(filter(lambda x: x < max_loss, losses_full_pred[-20:]))):.4f} ")
 
         writer.add_scalar('Loss', losses[-1], idx_counter)
         writer.add_scalar('Loss_rep', losses_rep[-1], idx_counter)
@@ -220,84 +243,38 @@ for epoch in range(n_iter):
 
         idx_counter += 1
 
-        wandb.log({'batch_train_loss': loss.item(),
-                   'batch_train_reploss': loss_rep.item()})
+        # wandb.log({'batch_train_loss': loss.item(),
+        #            'batch_train_reploss': loss_rep.item()})
     print(f'end epoch {epoch}: total mean loss: {np.mean(list(filter(lambda x: x < max_loss, losses)))}, '
+          f'total full pred loss: {np.mean(list(filter(lambda x: x < max_loss, losses_full_pred)))}, '
           f'mean rep loss: {np.mean(list(filter(lambda x: x < max_loss, losses_rep)))}')
 
-    wandb.log({'epoch_train_loss': np.mean(list(filter(lambda x: x < max_loss, losses))),
-               'epoch_train_reploss': np.mean(list(filter(lambda x: x < max_loss, losses_rep)))})
 
-    # print('visualization')
-    # # for i in range(3):
-    # for idx in tqdm.tqdm(range(len(pd_valid))):
-    #     # idx = np.random.randint(pd_valid.bounds[-1])
-    #     try:
-    #         (_, (_, in_skels), (_, fut_skels)) = pd_valid.__getitem__(idx)
-    #         _, in_frames_fns, _, pred_frames_fns = pdc.__getitem__(idx)
-    #         print(in_frames_fns, pred_frames_fns)
-    #         in_imgs = [np.array(cv2.imread(fn)) for fn in in_frames_fns]
-    #         fut_imgs = [np.array(cv2.imread(fn)) for fn in pred_frames_fns]
-    #     except Exception as e:  # some skel fn None so get idx None, None. Or image files unreadable etc.
-    #         continue
-    #     if in_frames_fns == [] or pred_frames_fns == []:
-    #         continue
-    #
-    #     if in_skels is not None and fut_skels is not None:
-    #         in_skels_world = torch.cat(in_skels)
-    #         fut_skels_world = torch.cat(fut_skels)
-    #     if torch.any(torch.isnan(in_skels_world)) or torch.any(torch.isnan(fut_skels_world)):
-    #         continue
-    #
-    #     # start, seq_idx = get_start_idx(idx, pd_valid.bounds, pd_valid.start_jump)
-    #     print(in_frames_fns)
-    #     scene_name = in_frames_fns[0].split('\\')[3].split('_')[0]
-    #     video_name = in_frames_fns[0].split('\\')[3]
-    #     if os.path.exists(os.path.join(viz_folder, video_name, 'epoch' + str(epoch))):
-    #         continue
-    #     print(idx, video_name)
-    #     with open(f'{root_dir}/cam2world/{scene_name}.json') as file:
-    #         cam2world = np.array(json.load(file))
-    #         cam2world = torch.from_numpy(cam2world).float()
-    #
-    #     images = in_imgs + fut_imgs
-    #     img_fns = in_frames_fns + pred_frames_fns
-    #
-    #     output_images = predict_and_visualise_transformer(model, in_skels_world.to(device), fut_skels_world.to(device), images, cam2world.to(device))
-    #     images_down = [
-    #         cv2.resize((img * 255).astype(np.uint8), dsize=(int(img.shape[1] / 5), int(img.shape[0] / 5))) for img
-    #         in output_images]
-    #     if not os.path.exists(os.path.join(viz_folder, video_name)):
-    #         os.makedirs(os.path.join(viz_folder, video_name))
-    #     if not os.path.exists(os.path.join(viz_folder, video_name, 'epoch' + str(epoch))):
-    #         os.makedirs(os.path.join(viz_folder, video_name, 'epoch' + str(epoch)))
-    #     for i, img in enumerate(images_down):
-    #         cv2.imwrite(os.path.join(viz_folder, video_name, 'epoch' + str(epoch), img_fns[i].split('\\')[-1]), img)
-    #
-    #     # wandb.log({f'val_image_seq{i}': [wandb.Image(img) for img in images_down]})
 
     print('validation loss')
     with torch.no_grad():
         for i, (idx, in_skels, fut_skels) in (
         pbar := tqdm.tqdm(enumerate(dataloader_valid), total=len(dataloader_valid))):
             in_skels = in_skels.to(device)
-            fut_skels = fut_skels.to(device)
-
-            pelvis = in_skels[:, 0, 0, :].unsqueeze(1).unsqueeze(1)
-            in_skels = in_skels - pelvis
             in_skels_cpy = in_skels.clone()
+            fut_skels = fut_skels.to(device)
             in_skels = torch.flatten(in_skels, start_dim=2)
-
-            fut_skels = fut_skels - pelvis
             fut_skels = torch.flatten(fut_skels, start_dim=2)
-            tgt = torch.cat((in_skels[:, -1, :].unsqueeze(1), fut_skels[:, :-1, :]), dim=1)
+            in_skels_norm = (in_skels - mean_in_skels_all) / std_in_skels_all
+            fut_skels_norm = (fut_skels - mean_fut_skels_all) / std_fut_skels_all
 
-            tgt_mask = model.get_tgt_mask(fut_skels.shape[1]).to(device)
-            pred_frames = fut_skels.shape[1]
-            batch_len = fut_skels.shape[0]
-            # print(f'batch_len: {batch_len}')  # maybe something's wrong but I do get about avg 13 batchlen not 15 :( crummy files?
+            pelvis = in_skels_norm[:, 0, :].unsqueeze(1)
+            in_skels_norm = in_skels_norm - pelvis
 
-            pred_skels = model(in_skels, tgt, tgt_mask=tgt_mask)
+            fut_skels_norm = fut_skels_norm - pelvis
+            tgt = in_skels_norm[:, -1, :].unsqueeze(1)
+
+            for i in range(fut_skels_norm.shape[1]):
+                tgt_mask = model.get_tgt_mask(tgt.size(1)).to(device)
+                pred = model(in_skels_norm, tgt, tgt_mask)
+                tgt = torch.cat((tgt, pred[:, -1, :].unsqueeze(1)), dim=1)
+            pred_skels_norm = tgt[:, 1:, :]
+            pred_skels = ((pred_skels_norm + pelvis) * std_fut_skels_all) + mean_fut_skels_all
 
             loss = criterion(pred_skels, fut_skels)
 
@@ -315,8 +292,8 @@ for epoch in range(n_iter):
             losses_valid.append(loss.item())
             pbar.set_description(
                 f"avg last 20 loss: {np.mean(list(filter(lambda x: x < max_loss, losses_valid[-20:]))):.4f} ")
-            wandb.log({'batch_val_loss': loss.item(),
-                       'batch_val_reploss': loss_rep.item()})
+            # wandb.log({'batch_val_loss': loss.item(),
+            #            'batch_val_reploss': loss_rep.item()})
         print(
             f'end epoch {epoch}: total mean validation loss: {np.mean(list(filter(lambda x: x < max_loss, losses_valid)))}, '
             f'mean rep loss: {np.mean(list(filter(lambda x: x < max_loss, losses_rep_valid)))}')
@@ -328,10 +305,4 @@ for epoch in range(n_iter):
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
-            }, os.path.join(save_folder, 'transformer_best_model.pt'))
-
-        wandb.log({'epoch_val_loss': np.mean(list(filter(lambda x: x < max_loss, losses_valid))),
-                   'epoch_val_reploss': np.mean(list(filter(lambda x: x < max_loss, losses_rep_valid)))})
-
-plt.plot(losses)
-print(losses[-4:])
+            }, os.path.join(save_folder, 'transformer_best_model' + name + '.pt'))
