@@ -27,18 +27,32 @@ On Euler cluster we used a virtual environment with loaded modules:
 `gcc/6.3.0 python_gpu/3.8.5 cuda/10.2.89 mesa/18.3.6 open3d/0.9.0 eth_proxy`
 
 ## Results
+We show some qualitative results on our validation set, which contains 9 videos in 2 scenes: N3OpenArea and BasementSittingBooth.
+### RNN
 On a 2 second motion prediction from 1 second of input joint locations with an RNN. Not very good motion prediction unfortunately, our history of model training was messy and ignorant. This is the best we achieved on a short time frame prediction, though we also tried to predict longer sequences which is harder.
 
 Predicted Lying human to sit up
 ![PROX Examples](./gifs/sit_up.gif)
+
 Human Walking
+
 ![PROX Examples](./gifs/walk.gif)
+
 Assumes static standing human will start moving forwards - but has floating not walking feet
+
 ![PROX Examples](./gifs/feet.gif)
 
 Some more examples from PROX dataset RGB camera point of view
+
 ![PROX Examples](./gifs/2D_sitting.gif)
 ![PROX Examples](./gifs/2D_wallpoint.gif)
+
+### Transformer
+The transformer model is able to predict natural human paths and shapes, but is unable to follow the trajectories accurately.
+<img src="./gifs/seq_30_transformer.gif" width="800"/>
+<img src="./gifs/seq_95_transformer.gif" width="800"/>
+<img src="./gifs/seq_130_transformer.gif" width="800"/>
+
 
 ## Visualization
 You can visualize skeletons in 2D and 3D with [benji_3d_skel_in_scene_vis.ipynb](./src/notebooks_neat/benji_3d_skel_in_scene_vis.ipynb)
@@ -47,6 +61,7 @@ You can visualize skeletons in 2D and 3D with [benji_3d_skel_in_scene_vis.ipynb]
 See [proximity_map_demo.ipynb](./src/notebooks_neat/proximity_map_demo.ipynb) for loading proximity maps.
 
 Here's a gif of what a time sequence of proximity maps looks like:
+
 ![prox_map.gif](./gifs/prox_map.gif)
 
 ## Training models
